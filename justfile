@@ -1,7 +1,10 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 fetch:
-    uv run fetch_diary.py
+    uv run src/fetch_diary.py
+
+smoke-test:
+    uv run src/smoke_test_connections.py
 
 lint:
     uv run ruff check .
