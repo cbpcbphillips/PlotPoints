@@ -24,8 +24,9 @@ Copy `.env.example` to `.env` as you go and fill in values as each step produces
 
 ## 2. Letterboxd
 
-No account setup needed — the diary RSS feed is public. Set `LETTERBOXD_USERNAME` in
-`.env` to your Letterboxd username.
+No account setup needed — the diary RSS feed is public. There's no `.env` entry for
+this: pass your Letterboxd username to `fetch_diary.py` as an argument
+(`uv run src/fetch_diary.py <username>`), or enter it when the script prompts.
 
 ## 3. Snowflake — core objects
 

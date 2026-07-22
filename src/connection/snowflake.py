@@ -78,6 +78,22 @@ def get_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
     )
 
 
+def ensure_schema(conn: snowflake.connector.SnowflakeConnection, schema_name: str) -> None:
+    """Idempotently create a schema in SNOWFLAKE_DATABASE."""
+    database = _validate_identifier(require_env("SNOWFLAKE_DATABASE"), "SNOWFLAKE_DATABASE")
+    schema_name = _validate_identifier(schema_name, "schema_name")
+
+    with conn.cursor() as cur:
+        try:
+            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {database}.{schema_name}")
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(
+                f"Failed to create/verify schema {database}.{schema_name}: {exc}. "
+                f"Check that SNOWFLAKE_ROLE has CREATE SCHEMA on the database "
+                f"(docs/external_setup.md step 3)."
+            ) from exc
+
+
 def ensure_stage(conn: snowflake.connector.SnowflakeConnection) -> str:
     """Idempotently create the external stage against SNOWFLAKE_STORAGE_INTEGRATION
     and AWS_S3_BUCKET. Returns the fully-qualified stage name (no leading @)."""

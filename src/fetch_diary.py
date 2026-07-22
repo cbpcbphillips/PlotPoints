@@ -5,15 +5,13 @@ This is an expected limitation of the feed, not a bug in this script.
 """
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import feedparser
 from bs4 import BeautifulSoup
 
-LETTERBOXD_USERNAME = "VetOW"
-
-RSS_URL = f"https://letterboxd.com/{LETTERBOXD_USERNAME}/rss/"
 CHECKPOINT_PATH = Path("data/checkpoints/diary_raw.json")
 
 
@@ -37,12 +35,13 @@ def parse_review_text(description_html):
     return "\n\n".join(paragraphs)
 
 
-def parse_entry(entry):
+def parse_entry(entry, username):
     rating_raw = getattr(entry, "letterboxd_memberrating", None)
     rewatch_raw = getattr(entry, "letterboxd_rewatch", None)
     tmdb_id_raw = getattr(entry, "tmdb_movieid", None) or getattr(entry, "tmdb_tvid", None)
 
     return {
+        "letterboxd_username": username,
         "letterboxd_uri": entry.link,
         "guid": entry.guid,
         "film_title": getattr(entry, "letterboxd_filmtitle", None),
@@ -56,29 +55,32 @@ def parse_entry(entry):
     }
 
 
-def fetch_diary():
-    feed = feedparser.parse(RSS_URL)
+def fetch_diary(username: str) -> list[dict]:
+    rss_url = f"https://letterboxd.com/{username}/rss/"
+    feed = feedparser.parse(rss_url)
 
     if feed.bozo and not feed.entries:
         raise RuntimeError(
-            f"Failed to parse Letterboxd RSS feed at {RSS_URL}: {feed.bozo_exception}"
+            f"Failed to parse Letterboxd RSS feed at {rss_url}: {feed.bozo_exception}"
         )
 
     if not feed.entries:
         raise RuntimeError(
-            f"No entries found in feed at {RSS_URL}. Double-check that "
-            f"LETTERBOXD_USERNAME ('{LETTERBOXD_USERNAME}') is correct."
+            f"No entries found in feed at {rss_url}. Double-check that "
+            f"the username ('{username}') is correct."
         )
 
-    return [parse_entry(entry) for entry in feed.entries]
+    return [parse_entry(entry, username) for entry in feed.entries]
 
 
 def main():
-    entries = fetch_diary()
+    username = sys.argv[1] if len(sys.argv) > 1 else input("Letterboxd username: ").strip()
+
+    entries = fetch_diary(username)
 
     checkpoint = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "source": RSS_URL,
+        "source": f"https://letterboxd.com/{username}/rss/",
         "count": len(entries),
         "entries": entries,
     }

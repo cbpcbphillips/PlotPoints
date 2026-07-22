@@ -3,6 +3,9 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 fetch:
     uv run src/fetch_diary.py
 
+enrich:
+    uv run src/enrich_tmdb.py
+
 smoke-test:
     uv run src/smoke_test_connections.py
 

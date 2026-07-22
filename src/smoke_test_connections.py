@@ -12,6 +12,7 @@ from snowflake.connector.errors import ProgrammingError
 
 from connection.s3 import get_s3_client
 from connection.snowflake import ensure_stage, get_snowflake_connection
+from schema import ensure_diary_entries_table, ensure_json_file_format
 
 load_dotenv()
 
@@ -46,6 +47,12 @@ def check_snowflake():
                 ) from exc
 
             print(f"LIST @{stage_name} -> {len(rows)} object(s)")
+
+            table_name = ensure_diary_entries_table(conn)
+            print(f"Table ready: {table_name}")
+
+            file_format_name = ensure_json_file_format(conn)
+            print(f"File format ready: {file_format_name}")
 
 
 def check_s3():
