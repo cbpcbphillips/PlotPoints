@@ -38,7 +38,13 @@ def parse_review_text(description_html):
 def parse_entry(entry, username):
     rating_raw = getattr(entry, "letterboxd_memberrating", None)
     rewatch_raw = getattr(entry, "letterboxd_rewatch", None)
-    tmdb_id_raw = getattr(entry, "tmdb_movieid", None) or getattr(entry, "tmdb_tvid", None)
+
+    # Letterboxd tags each entry with either a movie or a TV tmdb id; keep track of
+    # which so enrichment can hit the right TMDB endpoint (/movie vs /tv).
+    movie_id = getattr(entry, "tmdb_movieid", None)
+    tv_id = getattr(entry, "tmdb_tvid", None)
+    tmdb_id_raw = movie_id or tv_id
+    media_type = "movie" if movie_id else ("tv" if tv_id else None)
 
     return {
         "letterboxd_username": username,
@@ -50,6 +56,7 @@ def parse_entry(entry, username):
         "rewatch": rewatch_raw == "Yes",
         "rating": float(rating_raw) if rating_raw else None,
         "tmdb_id": int(tmdb_id_raw) if tmdb_id_raw else None,
+        "tmdb_media_type": media_type,
         "review_text": parse_review_text(entry.description),
         "published": getattr(entry, "published", None),
     }
