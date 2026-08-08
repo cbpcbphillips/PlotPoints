@@ -24,6 +24,16 @@ catalog-enrich:
 smoke-test:
     uv run src/smoke_test_connections.py
 
+# Load an enriched checkpoint into its RAW table (source = diary | catalog)
+load source:
+    uv run src/load_snowflake.py {{source}}
+
+# --- dbt (transformed schema) ---
+
+# Run dbt against plotpoints_dbt (.env loaded, isolated via uvx). e.g. `just dbt build`
+dbt *args:
+    uv run src/run_dbt.py {{args}}
+
 # --- Dev ---
 
 lint:

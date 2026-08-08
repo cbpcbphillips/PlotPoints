@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+    schema: RAW
+    description: Landing tables loaded by src/load_snowflake.py (one VARIANT record per row).
+    tables:
+      - name: diary_entries
+        description: One row per Letterboxd watch event; natural key (letterboxd_username, guid).
+      - name: tmdb_titles
+        description: One row per catalog title; natural key (media_type, tmdb_id).

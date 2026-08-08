@@ -15,8 +15,8 @@ for one viewer, or a group ("what should we watch together?").
 | Enrich diary | Match each entry to TMDB (movie/TV), full payload | `just enrich` |
 | Fetch catalog | Discover a broad TMDB movie catalog (candidate pool) | `just catalog-fetch` |
 | Enrich catalog | Lean, English-only TMDB payload for catalog titles | `just catalog-enrich` |
-| Load *(Phase 2, WIP)* | NDJSON → S3 → `COPY` into `RAW.*` | — |
-| Transform *(dbt, later)* | Star schema: `dim_media` / `dim_person` / … | — |
+| Load | NDJSON → S3 → `COPY` into `RAW.*` | `just load <diary\|catalog>` |
+| Transform (dbt) | Star schema: `dim_media` / `dim_person` / … | `just dbt build` |
 | Vectorize *(Cortex, later)* | Embeddings over the catalog | — |
 | Recommend *(later)* | Taste vector → single & group recommendations | — |
 
@@ -31,19 +31,31 @@ src/
   fetch_catalog.py             TMDB discovery         → data/checkpoints/catalog_raw.json
   enrich_catalog.py            lean catalog enrichment (reuses enrich_tmdb)
   raw_schema.py                RAW landing tables + COPY primitives (Snowflake)
+  load_snowflake.py            NDJSON → S3 → COPY into RAW.* (diary | catalog)
+  run_dbt.py                   `just dbt` wrapper (loads .env, runs dbt via uvx)
   smoke_test_connections.py    verifies Snowflake + S3 wiring
   connection/                  Snowflake key-pair auth, S3 client, external stage
+plotpoints_dbt/                dbt project — staging views + marts (the star schema)
 docs/
   roadmap.md                   architecture & phased build plan
   external_setup.md            provisioning TMDB / Snowflake / AWS
 ```
 
-## Getting started
+## Setup (fresh clone / new machine)
 
-1. Provision the external services and fill in `.env` — see **[docs/external_setup.md](docs/external_setup.md)**.
-2. Install dependencies with [uv](https://docs.astral.sh/uv/); recipes are run via [just](https://github.com/casey/just).
-3. Verify the wiring: `just smoke-test`.
-4. Run the ingestion stages above (`just catalog-fetch --limit 60` for a quick trial run).
+1. Install [uv](https://docs.astral.sh/uv/) and [just](https://github.com/casey/just)
+   (`winget install Casey.Just`), then clone the repo.
+2. `uv sync` — creates `.venv` and installs dependencies (uv fetches Python 3.13 itself). Point your
+   IDE (e.g. DataSpell) at the resulting `.venv`.
+3. **Copy your RSA private key file onto the machine.** It lives *outside* the repo (e.g.
+   `~/.snowflake/plotpoints/rsa_key.p8`), so a clone won't bring it — it's the one thing you must move by hand.
+4. `cp .env.example .env` and fill it in. Set `SNOWFLAKE_PRIVATE_KEY_PATH` to the key's path on *this*
+   machine; the other values are the same account/keys as before. First-time provisioning of the external
+   services is covered in **[docs/external_setup.md](docs/external_setup.md)**.
+5. `just smoke-test` — verifies Snowflake + S3 wiring and ensures the RAW landing objects exist.
+
+dbt needs no separate install — `just dbt <cmd>` runs it isolated via `uvx`. Then run the pipeline
+stages above (`just catalog-fetch --limit 60` is a quick trial run).
 
 ## Data model
 

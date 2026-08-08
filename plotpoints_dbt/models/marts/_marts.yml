@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: dim_media
+    description: One row per title (movie/TV), scalar attributes.
+    columns:
+      - name: media_key
+        tests: [unique, not_null]
+  - name: dim_person
+    description: One row per person, keyed on TMDB person_id.
+    columns:
+      - name: person_id
+        tests: [unique, not_null]
+  - name: dim_genre
+    columns:
+      - name: genre_id
+        tests: [unique, not_null]
+  - name: dim_keyword
+    columns:
+      - name: keyword_id
+        tests: [unique, not_null]
+  - name: dim_user
+    columns:
+      - name: user_id
+        tests: [unique, not_null]
+  - name: dim_date
+    columns:
+      - name: date_day
+        tests: [unique, not_null]
+
+  - name: fct_diary_entry
+    description: One row per watch event.
+    columns:
+      - name: diary_entry_key
+        tests: [unique, not_null]
+      - name: media_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_media')
+                field: media_key
+      - name: user_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_user')
+                field: user_id
+
+  - name: bridge_media_person
+    columns:
+      - name: media_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_media')
+                field: media_key
+      - name: person_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_person')
+                field: person_id
+  - name: bridge_media_genre
+    columns:
+      - name: genre_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_genre')
+                field: genre_id
+  - name: bridge_media_keyword
+    columns:
+      - name: keyword_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_keyword')
+                field: keyword_id

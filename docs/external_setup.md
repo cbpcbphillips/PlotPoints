@@ -4,6 +4,10 @@ This project depends on a handful of external services (TMDB, Snowflake, AWS S3)
 have to be provisioned manually before the pipeline will run. This doc walks through
 provisioning all of them from scratch. Budget 30-45 minutes.
 
+> **Moving machines / already provisioned?** If the services already exist and you just need the repo
+> running on another machine, follow the **Setup** steps in the [README](../README.md) plus your `.env`
+> and RSA key file — this runbook is only for first-time provisioning from scratch.
+
 Copy `.env.example` to `.env` as you go and fill in values as each step produces them.
 `.env` is gitignored — never commit it.
 

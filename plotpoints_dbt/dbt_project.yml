@@ -1,0 +1,21 @@
+name: plotpoints
+version: "1.0.0"
+profile: plotpoints
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+
+require-dbt-version: [">=1.12.0", "<2.0.0"]
+
+models:
+  plotpoints:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: mart
