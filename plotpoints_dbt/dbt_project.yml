@@ -8,6 +8,12 @@ seed-paths: ["seeds"]
 
 require-dbt-version: [">=1.12.0", "<2.0.0"]
 
+# Cortex embeddings (Phase 4). embedding_dimension must match the model's native
+# width -- it selects the EMBED_TEXT_<n> function. See macros/embed_text.sql.
+vars:
+  embedding_model: snowflake-arctic-embed-l-v2.0
+  embedding_dimension: 1024
+
 models:
   plotpoints:
     staging:

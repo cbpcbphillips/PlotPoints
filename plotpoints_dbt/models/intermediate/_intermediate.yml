@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: int_media_document
+    description: >
+      One embedding document per title, assembled from the star schema. document_hash
+      drives the incremental refresh in media_embeddings, so it must be deterministic.
+    columns:
+      - name: media_key
+        tests: [unique, not_null]
+      - name: document
+        tests: [not_null]
+      - name: document_hash
+        tests: [not_null]

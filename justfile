@@ -28,6 +28,32 @@ smoke-test:
 load source:
     uv run src/load_snowflake.py {{source}}
 
+# --- Search (Phase 4) ---
+
+# Semantic search over the embedded catalog. e.g. just search "a lonely robot on a dying earth"
+search query *args:
+    uv run src/search_media.py {{quote(query)}} {{args}}
+
+# --- Connection checks ---
+
+# Check every endpoint (TMDB, Snowflake, AWS) -- each may fail without hiding the others
+test-all:
+    -uv run src/check_tmdb.py
+    -uv run src/check_snowflake.py
+    -uv run src/check_aws.py
+
+# TMDB: auth, both append profiles, the catalog discover query
+test-tmdb *args:
+    uv run src/check_tmdb.py {{args}}
+
+# Snowflake: auth, RAW objects + row counts, stage LIST, dbt schemas, Cortex grant (read-only)
+test-snowflake *args:
+    uv run src/check_snowflake.py {{args}}
+
+# AWS S3: credentials, bucket, list (read-only; --write also tests PutObject)
+test-aws *args:
+    uv run src/check_aws.py {{args}}
+
 # --- dbt (transformed schema) ---
 
 # Run dbt against plotpoints_dbt (.env loaded, isolated via uvx). e.g. `just dbt build`

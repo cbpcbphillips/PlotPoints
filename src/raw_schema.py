@@ -10,8 +10,8 @@ Two landing tables + a shared NDJSON file format:
   - ensure_tmdb_titles_table   / copy_tmdb_titles   -> RAW.TMDB_TITLES
       one row per catalog title, key (media_type, tmdb_id)
   - ensure_json_file_format -> the NDJSON file format both COPYs use
-A separate loader (src/load_snowflake.py, not built yet) orchestrates uploading
-NDJSON to S3 and calling these.
+The loader (src/load_snowflake.py) orchestrates uploading NDJSON to S3 and
+calling these.
 """
 
 import os

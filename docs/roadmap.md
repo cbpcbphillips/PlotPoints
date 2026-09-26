@@ -27,12 +27,12 @@ Letterboxd RSS  →  RAW.DIARY_ENTRIES       →   stg_ + fct_diary_    →   US
 
 ## Two ingestion sources (both land VARIANT via the S3 stage + COPY)
 
-| | Catalog ingester (NEW) | User-history ingester (EXISTS) |
+| | Catalog ingester | User-history ingester |
 |---|---|---|
-| Source | TMDB `/discover`, `/movie/popular`, `/movie/top_rated`, `/tv/*` | Letterboxd diary RSS (`fetch_diary.py`) |
+| Source | TMDB `/discover/movie` ([../src/fetch_catalog.py](../src/fetch_catalog.py)) | Letterboxd diary RSS ([../src/fetch_diary.py](../src/fetch_diary.py)) |
 | Grain | one row per `(media_type, tmdb_id)` | one row per watch event (Letterboxd `guid`) |
-| Table | `RAW.TMDB_TITLES` (to build) | `RAW.DIARY_ENTRIES` (built) |
-| Enrichment | **reuses `enrich_tmdb` unchanged** | same engine |
+| Table | `RAW.TMDB_TITLES` | `RAW.DIARY_ENTRIES` |
+| Enrichment | `enrich_tmdb` via `enrich_catalog.py`, **lean** payload profile | `enrich_tmdb`, **full** payload profile |
 | User-dependent? | No — this is the foundation | Yes — layered on later |
 
 **Key reuse:** the movie/TV enrichment engine in [../src/enrich_tmdb.py](../src/enrich_tmdb.py)
@@ -53,13 +53,20 @@ Star schema, built on the RAW tables:
 - **Staging:** `stg_tmdb_titles`, `stg_diary_entries` flatten the `record`/`tmdb` VARIANT into typed
   columns and dedupe on natural key via `QUALIFY ROW_NUMBER() … ORDER BY loaded_at DESC`.
 
-## Vectorization (Cortex — already granted `SNOWFLAKE.CORTEX_USER`)
+## Vectorization (Cortex — BUILT)
 
-- Build one **embedding document** per title: concatenate the semantic fields —
-  title, overview, tagline, genres, keywords, top cast, director(s). (Field selection is a Phase-4
-  decision.)
-- `SNOWFLAKE.CORTEX.EMBED_TEXT_*` → a `VECTOR` column in `MART.MEDIA_EMBEDDINGS` keyed by
-  `(media_type, tmdb_id)`. This is the vectorized catalog corpus.
+- [int_media_document](../plotpoints_dbt/models/intermediate/int_media_document.sql) builds one
+  labeled **embedding document** per title from the star schema — title, year, type, genres,
+  director(s), top 10 cast in billing order, keywords, tagline, overview — plus a `document_hash`.
+- [media_embeddings](../plotpoints_dbt/models/marts/media_embeddings.sql) embeds it via
+  `SNOWFLAKE.CORTEX.EMBED_TEXT_1024` into a `VECTOR(FLOAT, 1024)` column in
+  `MART.MEDIA_EMBEDDINGS`, keyed by `media_key`. This is the vectorized catalog corpus.
+- The model is **incremental on `document_hash`**: a rerun re-embeds only new or changed titles,
+  and a model switch re-embeds everything (`embedding_model` is part of the match). `dbt build
+  --full-refresh` re-embeds the whole catalog — cheap at sample size, a real bill at 50k.
+- [search_media.py](../src/search_media.py) (`just search "..."`) embeds a free-text query with the
+  same model and ranks by `VECTOR_COSINE_SIMILARITY` — the same mechanism Phase 5 runs on, with a
+  taste vector in place of the typed string.
 
 ## User taste + recommend (single & group)
 
@@ -85,35 +92,75 @@ DAGs: `catalog_refresh` (periodic; incremental via TMDB `changes` API + `tmdb_en
 - **Phase 0 — DONE:** enrichment engine (movie+TV, full payload), connection layer (S3 + Snowflake
   key-pair), `RAW.DIARY_ENTRIES` + COPY primitives ([../src/raw_schema.py](../src/raw_schema.py)), Letterboxd
   fetch.
-- **Phase 1 — Catalog ingestion (NEXT, the foundation):** choose catalog scope (see open decisions);
-  build a TMDB discovery source → list of `(media_type, tmdb_id)`; enrich via the existing engine;
-  add `RAW.TMDB_TITLES` landing table + `copy_tmdb_titles`.
-- **Phase 2 — Load layer:** `src/load_snowflake.py` — checkpoint → compact NDJSON → S3
-  ([../src/connection/s3.py](../src/connection/s3.py)) → `COPY` (serves both catalog and diary). The
-  COPY primitives already exist in `raw_schema.py`.
-- **Phase 3 — dbt project:** init dbt, sources on `RAW.*`, staging + marts (dims/bridges/fact).
-- **Phase 4 — Cortex embeddings:** embedding document + `EMBED_TEXT` → `MEDIA_EMBEDDINGS`.
-- **Phase 5 — Taste + recommend:** taste vector + cosine-similarity serving, for a single user and
-  for a group ("watch together").
+- **Phase 1 — Catalog ingestion — DONE:** TMDB discovery → `(media_type, tmdb_id)` list
+  ([../src/fetch_catalog.py](../src/fetch_catalog.py)), lean enrichment
+  ([../src/enrich_catalog.py](../src/enrich_catalog.py)), `RAW.TMDB_TITLES` + `copy_tmdb_titles`.
+- **Phase 2 — Load layer — DONE:** [../src/load_snowflake.py](../src/load_snowflake.py) — checkpoint
+  → compact NDJSON → S3 ([../src/connection/s3.py](../src/connection/s3.py)) → `COPY`, serving both
+  catalog and diary.
+- **Phase 3 — dbt project — DONE:** sources on `RAW.*`, staging views + intermediate + marts
+  (dims/bridges/fact), 20 schema tests. `just dbt build` runs green.
+- **Phase 4 — Cortex embeddings — DONE:** `int_media_document` + `media_embeddings` (incremental,
+  `arctic-embed-l-v2.0`, 1024-dim) → `MART.MEDIA_EMBEDDINGS`, plus `just search` for semantic
+  lookup. `just dbt build` runs green at PASS=45.
+- **Phase 5 — Taste + recommend (NEXT):** taste vector + cosine-similarity serving, for a single
+  user and for a group ("watch together").
 - **Phase 6 — Airflow:** orchestrate + incremental refresh.
+
+### Where the data actually stands
+
+The pipeline is proven end-to-end but only on a **trial-sized sample** — the catalog holds 60 titles
+from a `just catalog-fetch --limit 60` run, not the 50k `DEFAULT_TARGET`. Worse, the sample is
+**entirely 2026 releases**: `fetch_catalog` walks release years backward from the current year, and
+`--limit 60` stops inside the first one. So the sample is not just small, it is unrepresentative —
+semantic search over it can show that the vectors work, but says nothing about recommendation
+quality across eras. Everything downstream
+(staging, marts, tests) is built on that sample. A full catalog fetch + enrich is the main
+outstanding *data* task; it is independent of Phase 4 code work, but embeddings over 60 titles won't
+produce meaningful recommendations, so the real catalog has to land before Phase 5 is worth judging.
+
+## Decisions made
+
+1. **Catalog scope & source (Phase 1).** `/discover/movie` sorted `vote_count.desc` with a
+   `vote_count.gte` floor (default 200), accumulating toward `DEFAULT_TARGET` = 50,000 titles. A
+   single `/discover` query caps at 500 pages (10k results), so
+   [../src/fetch_catalog.py](../src/fetch_catalog.py) slides `primary_release_year` windows backward
+   from the current year to 1900, which biases toward recent titles — acceptable for a candidate
+   pool. **Movies only; TV is not in the catalog yet** (see still-open #1).
+2. **Catalog payload weight (Phase 1).** Resolved in favour of a split: the catalog uses
+   `APPEND_BY_TYPE_LEAN` (credits, keywords, external_ids, release_dates, watch/providers, videos —
+   ~182 KB/title), the diary keeps the full `APPEND_BY_TYPE` (~366 KB/title). Dropping
+   images/translations/reviews/recommendations/similar/alternative_titles/lists costs nothing the
+   curated fields or embeddings use.
+3. **Diary ↔ catalog relationship (Phase 3).** Resolved as a union rather than a slim-down:
+   [../plotpoints_dbt/models/intermediate/int_media.sql](../plotpoints_dbt/models/intermediate/int_media.sql)
+   unions catalog and diary to one row per `(media_type, tmdb_id)`, with catalog winning on conflict
+   via `source_rank`. `DIARY_ENTRIES` keeps its full payload, so a watched title that isn't in the
+   catalog still resolves.
+
+4. **Embedding document + model (Phase 4).** Field set is **theme + people**: title, year, type,
+   genres, director(s), top 10 cast in billing order, keywords, tagline, overview — assembled from
+   the star schema (not by re-flattening `record`) so it stays consistent with the tested marts.
+   People are included deliberately: director/actor affinity drives a lot of real taste. Model is
+   **`snowflake-arctic-embed-l-v2.0` at 1024 dims** (all seven Cortex models are available in this
+   region; arctic-l was chosen for retrieval quality and multilingual handling). Assembly uses
+   `array_construct_compact` so absent fields drop their whole line rather than leaving a dangling
+   label, and `listagg` ordering is deterministic — anything non-deterministic would re-embed the
+   entire catalog on every run.
 
 ## Key open decisions (resolve at each phase)
 
-1. **Catalog scope & source (Phase 1 — biggest):** TMDB has ~1M+ movies / ~150k+ shows; can't enrich
-   all. Bound it — top-N by votes/popularity, `/discover` with a vote-count threshold + year/language
-   filters, or seed-from-Letterboxd-and-grow via `recommendations`/`similar`. Sets enrich runtime and
-   storage.
-2. **Catalog payload weight (Phase 1):** the "keep the full ~555 KB TMDB payload" decision was scoped
-   to the ~50-entry *diary*. A catalog of tens of thousands multiplies enrich time and storage ~1000×,
-   so the catalog may warrant a **leaner** payload (drop images/translations/reviews for catalog rows
-   while keeping them for diary rows). The full-payload choice should be revisited specifically for
-   catalog scale.
-3. **Diary ↔ catalog relationship (Phase 3):** once the catalog exists, `DIARY_ENTRIES` can slim to
-   Letterboxd fields + `tmdb_id` and *reference* the catalog (dbt join), instead of re-embedding the
-   full payload per watch. Trade-off: loses point-in-time snapshot of a title, but current catalog
-   state is fine for recommending.
-4. **Embedding document fields (Phase 4)** and **taste-vector formula / dislike handling (Phase 5).**
-5. **Group aggregation (Phase 5):** average vs least-misery vs Borda for combining members' scores;
+1. **TV in the catalog (deferred).** The catalog is movies-only. `APPEND_BY_TYPE_LEAN` has no `"tv"`
+   key, and `fetch_details()` silently falls back to the *full* append set for any media type the
+   profile misses — harmless today, but it multiplies payload size the moment TV is added. Fix that
+   fallback as part of adding TV discovery.
+2. **Query-side prefixing (Phase 5):** arctic-embed models are trained for asymmetric retrieval and
+   conventionally want a query prefix ("Represent this sentence for searching relevant
+   passages: "). `just search` currently embeds the raw string. Similarity scores land around
+   0.23-0.30, which is plausible but worth A/B-ing when the taste vector replaces the typed query.
+3. **Taste-vector formula (Phase 5):** how ratings weight the aggregate, and how dislikes are
+   handled (push away vs simply exclude).
+4. **Group aggregation (Phase 5):** average vs least-misery vs Borda for combining members' scores;
    whether to exclude titles seen by *any* member; whether to require shared availability/language.
 
 ---

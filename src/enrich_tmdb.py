@@ -1,4 +1,4 @@
-"""Enrich the Phase 1 diary checkpoint with TMDB metadata (movies and TV).
+"""Enrich the diary checkpoint with TMDB metadata (movies and TV).
 
 Each entry is routed to the matching TMDB endpoint (/movie or /tv) based on the
 tmdb_media_type stamped by fetch_diary. Every enriched entry gets:
@@ -319,7 +319,7 @@ def enrich_entries(
 def main():
     if not INPUT_PATH.exists():
         raise FileNotFoundError(
-            f"Phase 1 checkpoint not found at {INPUT_PATH}. Run src/fetch_diary.py first."
+            f"Diary checkpoint not found at {INPUT_PATH}. Run src/fetch_diary.py first."
         )
 
     checkpoint = json.loads(INPUT_PATH.read_text(encoding="utf-8"))

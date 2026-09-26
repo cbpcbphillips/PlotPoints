@@ -1,7 +1,12 @@
-"""Smoke-test the Snowflake + S3 connection layer (Phase 3 wiring).
+"""Smoke-test the Snowflake + S3 connection layer and provision the RAW objects.
 
 Verifies auth, role/warehouse/database/schema context, external stage
-creation, and S3 list access. Does not load any real data.
+creation, and S3 list access, creating the RAW landing objects if they are
+missing. Does not load any real data.
+
+This is the provisioning path. For read-only per-endpoint diagnostics that
+report state instead of creating it, use `just test-tmdb` / `test-snowflake` /
+`test-aws` (src/check_*.py).
 """
 
 import os

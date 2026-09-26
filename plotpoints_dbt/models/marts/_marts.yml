@@ -46,6 +46,24 @@ models:
                 to: ref('dim_user')
                 field: user_id
 
+  - name: media_embeddings
+    description: >
+      One Cortex embedding per title (see vars embedding_model / embedding_dimension).
+      Incremental on document_hash -- a rerun re-embeds only changed titles.
+    columns:
+      - name: media_key
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_media')
+                field: media_key
+      - name: embedding
+        tests: [not_null]
+      - name: document_hash
+        tests: [not_null]
+
   - name: bridge_media_person
     columns:
       - name: media_key
