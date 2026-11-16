@@ -10,17 +10,17 @@ current year backward biases toward more recent titles — fine for a candidate 
 import argparse
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 from connection._env import require_env
 from enrich_tmdb import tmdb_get
+from paths import CHECKPOINT_DIR
 
 load_dotenv()
 
-CHECKPOINT_PATH = Path("data/checkpoints/catalog_raw.json")
+CHECKPOINT_PATH = CHECKPOINT_DIR / "catalog_raw.json"
 
 DEFAULT_TARGET = 50_000
 DEFAULT_MIN_VOTES = 200
@@ -87,13 +87,20 @@ def main():
     parser.add_argument("--min-votes", type=int, default=DEFAULT_MIN_VOTES, help="vote_count floor")
     parser.add_argument("--limit", type=int, default=None, help="stop after N titles (test runs)")
     args = parser.parse_args()
+    run(args.target, args.min_votes, args.limit)
 
-    entries = fetch_catalog(args.target, args.min_votes, args.limit)
+
+def run(target=DEFAULT_TARGET, min_votes=DEFAULT_MIN_VOTES, limit=None) -> int:
+    """Fetch the catalog and write its checkpoint. Returns the number of entries.
+
+    The entry point an orchestrator calls; main() is just argparse around it.
+    """
+    entries = fetch_catalog(target, min_votes, limit)
 
     checkpoint = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "source": "tmdb:/discover/movie?sort_by=vote_count.desc",
-        "min_votes": args.min_votes,
+        "min_votes": min_votes,
         "count": len(entries),
         "entries": entries,
     }
@@ -106,6 +113,7 @@ def main():
     print(f"Wrote {len(entries)} catalog entries to {CHECKPOINT_PATH}")
     if entries:
         print("Sample:", json.dumps(entries[0], ensure_ascii=False))
+    return len(entries)
 
 
 if __name__ == "__main__":

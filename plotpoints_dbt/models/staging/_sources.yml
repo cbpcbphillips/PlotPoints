@@ -5,6 +5,14 @@ sources:
     database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
     schema: RAW
     description: Landing tables loaded by src/load_snowflake.py (one VARIANT record per row).
+    # Ingest is manually triggered, so "stale" is the failure mode that actually occurs: nobody
+    # refreshed the catalog. `dbt source freshness` (run by the pipeline_monitor DAG) reads the
+    # loaded_at column COPY already stamps on every row.
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: day}
+        error_after: {count: 90, period: day}
     tables:
       - name: diary_entries
         description: One row per Letterboxd watch event; natural key (letterboxd_username, guid).

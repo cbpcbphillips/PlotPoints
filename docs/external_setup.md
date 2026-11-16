@@ -114,7 +114,13 @@ S3 console → Create bucket:
 
 Set `AWS_S3_BUCKET` and `AWS_REGION` in `.env`.
 
-## 5. AWS — uploader IAM user (write-only, for local scripts)
+## 5. AWS — uploader IAM user (write-only for data, read/delete for scratch space)
+
+The uploader can only *write* the landing data Snowflake loads (`catalog/`, `diary/`), but it can
+read back and delete two scratch prefixes: `artifacts/` (intermediate pipeline checkpoints) and
+`_healthcheck/` (the connection check's probe objects). Scoping `GetObject`/`DeleteObject` to those
+prefixes, instead of the whole bucket, keeps the original least-privilege intent: a leaked uploader
+key can add landings but cannot read or destroy the data already there.
 
 IAM → Policies → Create policy → JSON tab:
 ```json
@@ -122,11 +128,16 @@ IAM → Policies → Create policy → JSON tab:
   "Version": "2012-10-17",
   "Statement": [
     {"Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::<bucket>"},
-    {"Effect": "Allow", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::<bucket>/*"}
+    {"Effect": "Allow", "Action": ["s3:PutObject", "s3:AbortMultipartUpload"],
+     "Resource": "arn:aws:s3:::<bucket>/*"},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:DeleteObject"],
+     "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/_healthcheck/*"]}
   ]
 }
 ```
-Name it `plotpoints-uploader-policy`.
+Name it `plotpoints-uploader-policy`. `AbortMultipartUpload` lets a failed large upload clean up
+after itself. (The original policy was `ListBucket` + `PutObject` only; if you are upgrading an
+existing setup, edit the policy and save it as a new default version — no key rotation needed.)
 
 IAM → Users → Create user → `plotpoints-uploader` → programmatic access only → attach
 the policy directly. After creation, go to the user → Security credentials → Create

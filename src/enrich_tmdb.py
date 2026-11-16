@@ -12,19 +12,19 @@ Typed flattening of `tmdb` is dbt's job downstream, not done here.
 import json
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 from connection._env import require_env
+from paths import CHECKPOINT_DIR
 
 load_dotenv()
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 
-INPUT_PATH = Path("data/checkpoints/diary_raw.json")
-OUTPUT_PATH = Path("data/checkpoints/diary_enriched.json")
+INPUT_PATH = CHECKPOINT_DIR / "diary_raw.json"
+OUTPUT_PATH = CHECKPOINT_DIR / "diary_enriched.json"
 
 REQUEST_DELAY = 0.3  # ~40 req / 10s allowed; stay comfortably under that
 REQUEST_TIMEOUT = 30  # generous — the all-append details payload can be large
@@ -71,7 +71,15 @@ def tmdb_get(session, api_key, path, params=None):
             time.sleep(retry_after)
             continue
 
-        response.raise_for_status()
+        if not response.ok:
+            # Not raise_for_status(): its message embeds the full request URL, and ours carries
+            # ?api_key=<secret>. This pipeline prints that message per failed title, and Airflow
+            # persists task logs, so the key would be written to disk and shown in the UI.
+            # `url` here is path-only (params are passed separately), so it is safe to include.
+            raise requests.HTTPError(
+                f"{response.status_code} {response.reason} for {url}", response=response
+            )
+
         time.sleep(REQUEST_DELAY)
         return response.json()
 
@@ -294,17 +302,30 @@ def enrich_entry(session, api_key, entry, append_by_type=APPEND_BY_TYPE):
         return {**entry, **null_enrichment(media_type, tmdb_id)}
 
 
+def enrich_entries_iter(entries, api_key: str | None = None, append_by_type: dict = APPEND_BY_TYPE):
+    """Yield enriched entries one at a time, so callers can stream them to disk.
+
+    enrich_entries() below collects everything in memory, which is fine for a ~50-entry
+    diary but not at catalog scale: ~182 KB per lean payload means 80k titles is ~15 GB
+    resident, and serializing that to write it roughly doubles the peak. The catalog
+    ingester consumes this generator and appends NDJSON as it goes.
+    """
+    api_key = api_key or require_env("TMDB_API_KEY")
+    session = requests.Session()
+
+    for entry in entries:
+        yield enrich_entry(session, api_key, entry, append_by_type)
+
+
 def enrich_entries(
     entries: list[dict], api_key: str | None = None, append_by_type: dict = APPEND_BY_TYPE
 ) -> tuple[list[dict], dict]:
     """Enrich diary entries with TMDB metadata. Returns (enriched_entries, match_summary).
 
     append_by_type selects the payload profile — the full APPEND_BY_TYPE (diary, default) or
-    APPEND_BY_TYPE_LEAN (catalog)."""
-    api_key = api_key or require_env("TMDB_API_KEY")
-    session = requests.Session()
-
-    enriched_entries = [enrich_entry(session, api_key, entry, append_by_type) for entry in entries]
+    APPEND_BY_TYPE_LEAN (catalog). For catalog-scale input use enrich_entries_iter instead;
+    this holds every enriched payload in memory."""
+    enriched_entries = list(enrich_entries_iter(entries, api_key, append_by_type))
 
     unmatched_entries = [entry for entry in enriched_entries if not entry["matched"]]
     match_summary = {
@@ -317,6 +338,14 @@ def enrich_entries(
 
 
 def main():
+    run()
+
+
+def run() -> dict:
+    """Enrich the diary checkpoint. Returns the match summary.
+
+    The entry point an orchestrator calls; main() is a bare wrapper.
+    """
     if not INPUT_PATH.exists():
         raise FileNotFoundError(
             f"Diary checkpoint not found at {INPUT_PATH}. Run src/fetch_diary.py first."
@@ -345,6 +374,8 @@ def main():
         print("\nUnmatched entries:")
         for entry in unmatched_entries:
             print(f"  - {entry.get('film_title')} ({entry.get('film_year')})")
+
+    return match_summary
 
 
 if __name__ == "__main__":

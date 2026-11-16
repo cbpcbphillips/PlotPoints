@@ -14,9 +14,9 @@ enrich:
 catalog-fetch *args:
     uv run src/fetch_catalog.py {{args}}
 
-# Enrich the catalog checkpoint with a lean TMDB payload
-catalog-enrich:
-    uv run src/enrich_catalog.py
+# Enrich the catalog checkpoint with a lean TMDB payload (resumable; --restart to redo)
+catalog-enrich *args:
+    uv run src/enrich_catalog.py {{args}}
 
 # --- Snowflake ---
 
@@ -27,6 +27,32 @@ smoke-test:
 # Load an enriched checkpoint into its RAW table (source = diary | catalog)
 load source:
     uv run src/load_snowflake.py {{source}}
+
+# --- Orchestration (Phase 5) ---
+
+# Start the local Airflow stack in Docker (builds the image first run). UI: http://localhost:8080
+airflow-start:
+    astro dev start
+
+# Stop Airflow, keeping its metadata DB
+airflow-stop:
+    astro dev stop
+
+# Rebuild + restart (needed after changing src/, plotpoints_dbt/ or deps; only dags/ include/ are live)
+airflow-restart:
+    astro dev restart
+
+# Run any airflow CLI command inside the stack, e.g. `just airflow dags list-import-errors`
+airflow *args:
+    astro dev run {{args}}
+
+# Regenerate requirements.txt for the Airflow image from pyproject.toml / uv.lock
+export-reqs:
+    uv run scripts/export_airflow_requirements.py
+
+# Estimated warehouse credits for recent activity (default: last 60 min)
+cost *args:
+    uv run src/pipeline_cost.py {{args}}
 
 # --- Search (Phase 4) ---
 
@@ -50,7 +76,7 @@ test-tmdb *args:
 test-snowflake *args:
     uv run src/check_snowflake.py {{args}}
 
-# AWS S3: credentials, bucket, list (read-only; --write also tests PutObject)
+# AWS S3: credentials, bucket, list (read-only; --write adds a self-cleaning put/get/delete)
 test-aws *args:
     uv run src/check_aws.py {{args}}
 

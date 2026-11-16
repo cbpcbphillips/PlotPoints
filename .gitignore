@@ -5,3 +5,12 @@ __pycache__/
 data/
 .idea/
 /CLAUDE.md
+
+# Astro / Airflow local runtime state (the project config in .astro/config.yaml is tracked)
+.astro/standalone/
+.astro/worktrees/
+.astro/*.lock
+.astro/*.local.yml
+.astro/*.local.yaml
+airflow.db
+airflow.cfg

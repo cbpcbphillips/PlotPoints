@@ -1,10 +1,11 @@
 """Connection check for AWS S3.
 
 Verifies the uploader credentials against the bucket the loader stages NDJSON into.
-Read-only by default. Pass --write to additionally exercise the real load path
-with a put/get/delete round trip on a small probe object under _healthcheck/. That
-is opt-in because the uploader IAM user is write-only: it can PutObject but not
-DeleteObject, so each --write run leaves a probe object behind for you to clear.
+Read-only by default. Pass --write to additionally exercise the real load path with a
+put/get/delete round trip on a small probe object under _healthcheck/. It stays opt-in
+because it writes to the bucket, even though it removes what it wrote. The uploader may
+read and delete only the scratch prefixes (artifacts/, _healthcheck/); under the older
+write-only policy the get and delete steps warn and the probe object is left behind.
 
 Run via `just test-aws`.
 """
@@ -123,8 +124,8 @@ def check_round_trip(client, bucket, key, state):
             body = client.get_object(Bucket=bucket, Key=key)["Body"].read()
         except ClientError as exc:
             raise CheckWarning(
-                f"s3:GetObject denied ({_error_code(exc)}) -- expected if the uploader "
-                f"is write-only; Snowflake reads via the storage integration, not this key"
+                f"s3:GetObject denied ({_error_code(exc)}). The uploader needs GetObject on "
+                f"_healthcheck/* and artifacts/* (docs/external_setup.md step 5)"
             ) from exc
         if body != PROBE_BODY:
             raise RuntimeError(f"read back {body!r}, expected {PROBE_BODY!r}")
@@ -138,7 +139,8 @@ def check_round_trip(client, bucket, key, state):
         except ClientError as exc:
             raise CheckWarning(
                 f"s3:DeleteObject denied ({_error_code(exc)}) -- probe object left at "
-                f"s3://{bucket}/{key}, remove it by hand"
+                f"s3://{bucket}/{key}. The uploader needs DeleteObject on _healthcheck/* "
+                f"(docs/external_setup.md step 5); remove the object by hand"
             ) from exc
         return "probe object removed"
 
@@ -150,7 +152,7 @@ def main():
     parser.add_argument(
         "--write",
         action="store_true",
-        help="also exercise s3:PutObject (leaves a probe object; the uploader cannot delete)",
+        help="also run a put/get/delete round trip on a probe object (writes, then cleans up)",
     )
     parser.add_argument("--verbose", action="store_true", help="print tracebacks on failure")
     args = parser.parse_args()

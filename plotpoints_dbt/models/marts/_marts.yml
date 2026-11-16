@@ -94,3 +94,21 @@ models:
               arguments:
                 to: ref('dim_keyword')
                 field: keyword_id
+
+  - name: mart_pipeline_health
+    description: >
+      Per-load-batch health of the RAW landings: row counts, enrichment match rate and
+      completeness of embedding-document fields. Reads RAW directly (not deduped staging) so a
+      bad batch can't be hidden by newer rows.
+    columns:
+      - name: batch
+        tests: [not_null]
+      - name: match_rate
+        tests: [not_null]
+  - name: mart_embedding_coverage
+    description: >
+      One row. Titles with a current embedding vs missing vs stale (document or model changed
+      since embedding). Non-zero missing/stale after a build means something is wrong.
+    columns:
+      - name: coverage
+        tests: [not_null]

@@ -7,12 +7,13 @@ This is an expected limitation of the feed, not a bug in this script.
 import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import feedparser
 from bs4 import BeautifulSoup
 
-CHECKPOINT_PATH = Path("data/checkpoints/diary_raw.json")
+from paths import CHECKPOINT_DIR
+
+CHECKPOINT_PATH = CHECKPOINT_DIR / "diary_raw.json"
 
 
 def parse_review_text(description_html):
@@ -82,7 +83,14 @@ def fetch_diary(username: str) -> list[dict]:
 
 def main():
     username = sys.argv[1] if len(sys.argv) > 1 else input("Letterboxd username: ").strip()
+    run(username)
 
+
+def run(username: str) -> int:
+    """Fetch a diary and write its checkpoint. Returns the number of entries.
+
+    The entry point an orchestrator calls; main() only adds the CLI prompt.
+    """
     entries = fetch_diary(username)
 
     checkpoint = {
@@ -100,6 +108,7 @@ def main():
     print(f"Wrote {len(entries)} entries to {CHECKPOINT_PATH}")
     print("\nSample entry:")
     print(json.dumps(entries[0], indent=2, ensure_ascii=False))
+    return len(entries)
 
 
 if __name__ == "__main__":

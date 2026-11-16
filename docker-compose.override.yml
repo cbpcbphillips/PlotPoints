@@ -1,0 +1,38 @@
+# Local-dev wiring that Astro's generated compose file doesn't know about.
+#
+# Two bind mounts, both deliberate:
+#
+# 1. data/ -- pipeline checkpoints. This is a KNOWN DOWNGRADE from the original design, which
+#    routed intermediate artifacts through S3. The uploader IAM user lacks s3:GetObject, so
+#    `enrich` cannot read back what `fetch` wrote there. A bind mount works, but it bakes in
+#    the assumption that tasks share a filesystem -- exactly what breaks once workers are
+#    distributed. Revisit when GetObject is granted.
+#
+# 2. The Snowflake private key, read-only. It lives outside the repo on the host
+#    (~/.snowflake/plotpoints) and must never be copied into an image layer, so it is mounted
+#    at runtime and SNOWFLAKE_PRIVATE_KEY_PATH is overridden to the in-container path (the
+#    value in .env is a Windows path that means nothing inside Linux).
+#
+# `environment:` takes precedence over the .env file Astro also injects.
+
+x-plotpoints: &plotpoints
+  environment:
+    SNOWFLAKE_PRIVATE_KEY_PATH: /usr/local/airflow/secrets/snowflake/rsa_key.p8
+  volumes:
+    - type: bind
+      source: ./data
+      target: /usr/local/airflow/data
+    - type: bind
+      source: ${USERPROFILE}/.snowflake/plotpoints
+      target: /usr/local/airflow/secrets/snowflake
+      read_only: true
+
+services:
+  scheduler:
+    <<: *plotpoints
+  dag-processor:
+    <<: *plotpoints
+  api-server:
+    <<: *plotpoints
+  triggerer:
+    <<: *plotpoints
