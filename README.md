@@ -19,7 +19,7 @@ for one viewer, or a group ("what should we watch together?").
 | Transform (dbt) | Star schema: `dim_media` / `dim_person` / … | `just dbt build` |
 | Vectorize (Cortex) | Embedding document → `VECTOR` in `MART.MEDIA_EMBEDDINGS` | `just dbt build` |
 | Search | Semantic lookup over the embedded catalog | `just search "..."` |
-| Recommend *(later)* | Taste vector → single & group recommendations | — |
+| Recommend | Weighted-film taste profile → ranked unwatched titles, single or group | `just recommend <user> [user2 …]` |
 
 See **[docs/roadmap.md](docs/roadmap.md)** for the full architecture and phase plan.
 
@@ -40,6 +40,7 @@ src/
   check_aws.py                 connection check — AWS S3
   check_common.py              shared PASS/WARN/FAIL harness for the checks
   search_media.py              semantic search over MART.MEDIA_EMBEDDINGS
+  recommend.py                 recommendations from a diary (single user or group)
   pipeline_cost.py             estimated warehouse credits for recent activity
   paths.py                     checkpoint location (PLOTPOINTS_DATA_DIR)
 dags/                          Airflow DAGs (catalog_ingest, diary_ingest, transform, pipeline_monitor)
@@ -90,6 +91,31 @@ prefixes `artifacts/` and `_healthcheck/` (see `docs/external_setup.md` step 5).
 
 These *report* state; they never create anything. `just smoke-test` is the provisioning path that
 creates the RAW landing objects if they're missing.
+
+## Recommendations
+
+```bash
+just recommend VetOW                  # one user
+just recommend VetOW someone_else     # a group: "what should we watch together?"
+```
+
+Each title comes back with *why*: the three films from your diary it resembles most. A few design
+choices worth knowing:
+
+- **There is no averaged taste vector.** A profile is a set of films weighted by rating
+  (`rating - 3`, so 4 stars is liked and below 3 is disliked), and each candidate is scored against
+  the three liked films it most resembles. Averaging would turn a love of both superhero films and
+  sports dramas into a point near neither.
+- **Similarity is standardized per film**, because some films sit closer to everything than others
+  and would otherwise dominate every list.
+- **Ratings matter twice:** yours set how strongly each film pulls (and what to avoid), and a
+  candidate's own TMDB rating is judged against *your* standard. A film rated below what you
+  usually like is discounted, not excluded.
+- **Groups use least-misery**: each person is scored separately and a title ranks by its *lowest*
+  score, so nothing is picked that one member would hate. Anything any member has seen is excluded.
+
+It is request-time SQL over the embeddings, not a dbt model, so a new user gets an answer as soon
+as their diary lands. See `docs/roadmap.md` for the reasoning and measurements.
 
 ## Orchestration (Airflow)
 

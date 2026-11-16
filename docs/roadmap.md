@@ -68,19 +68,39 @@ Star schema, built on the RAW tables:
   same model and ranks by `VECTOR_COSINE_SIMILARITY` — the same mechanism Phase 5 runs on, with a
   taste vector in place of the typed string.
 
-## User taste + recommend (single & group)
+## User taste + recommend (single & group) — BUILT, Phase 6
 
-- **Taste vector:** aggregate the embeddings of the user's rated titles, weighted by rating (liked
-  pulls toward, disliked pushes away). One vector per user → `MART.USER_TASTE_VECTORS`.
-- **Single-user recommend:** `VECTOR_COSINE_SIMILARITY(taste, media_embedding)` over the catalog,
-  anti-join `fct_diary_entry` to drop already-watched, optional filters (media_type, language,
-  released), top-K → a serving view/table.
-- **Group recommend ("watch together"):** given 2+ users, combine their signals into one ranking.
-  Prefer per-title **score aggregation** over averaging the taste vectors — averaging vectors tends
-  toward bland compromises nobody loves. Strategies: *average* (max total satisfaction),
-  *least-misery* (max the minimum member score → nothing anyone hates), or *Borda/fairness*. Exclude
-  titles **any** member has already seen (union of histories), and optionally intersect availability
-  (shared watch providers) and language. Single-user falls out as the N=1 case.
+[../src/recommend.py](../src/recommend.py) (`just recommend VetOW`, or several usernames for a
+group). It is request-time SQL over `MART.MEDIA_EMBEDDINGS`, not a dbt model, so a brand-new user
+gets an answer the moment their diary lands.
+
+**There is no stored taste vector.** The original design averaged a user's film embeddings into one
+vector (`MART.USER_TASTE_VECTORS`). That was dropped on purpose: the mean of two tastes is not a
+taste. Someone who loves both superhero films and sports dramas averages into a point near neither.
+A profile is instead a *set of weighted films*, and each candidate is scored against the films that
+actually resemble it.
+
+- **Profile.** One row per film (latest watch's rating wins; unrated films stay in as "seen" but
+  carry no signal). `weight = rating - 3`, plus 0.5 for a rewatched film the user liked.
+- **Relevance.** Mean of a candidate's three best matches among liked films, each contribution being
+  similarity x (weight / the user's strongest weight). The three best, rather than the single best,
+  so one outlier film can't dominate.
+- **Similarity is z-scored per seed film** against that film's own distribution over the catalog.
+  Measured on this catalog, mean cosine similarity from a diary film to everything else ranges from
+  0.295 (*Moneyball*) to 0.412 (*Obsession*) against a standard deviation of only ~0.05, so raw cosine
+  would let high-floor films dominate every recommendation. This is the standard hubness correction.
+- **Dislikes** subtract `0.5 x` the candidate's z-scored similarity above baseline to the nearest
+  disliked film. Per candidate, so no vector is ever moved: a strong negative can't drag an averaged
+  vector somewhere arbitrary.
+- **Quality prior.** TMDB rating shrunk toward the catalog mean by vote count (`m` = 100, the vote
+  floor), then compared with the *user's own* standard (the weighted rating of what they like):
+  `min(1, q / anchor)^2`. A discount, never a boost or a filter; someone who loves schlock isn't
+  denied it by a global bar.
+- **Group mode.** Each member scored independently, combined per title with **least-misery** (the
+  minimum), and anything *any* member has watched is excluded. Two identical members reproduce the
+  single-user ranking exactly.
+- **Explanations** (`because: [...]`) are the top-3 liked films behind each result — a by-product of
+  the scoring, and what a frontend card needs.
 
 ## Orchestration (Airflow — BUILT, Phase 5)
 
@@ -140,11 +160,12 @@ pool makes the rate limit hold across everything Airflow schedules.
 - **Phase 5 — Orchestration + monitoring + containerization (IN PROGRESS):** the Airflow DAGs
   above, the dbt monitoring models, and the Docker image. Exit criterion: the real catalog load
   runs *through* `catalog_ingest` as the pipeline's first production run, not by hand.
-- **Phase 6 — Taste + recommend:** request-time parameterized SQL (not a dbt model, so a brand-new
-  user gets an answer without waiting for a batch run). Per-candidate score is the mean of its
-  top-3 similarities to the user's rated films, weighted by rating, blended with a
-  Bayesian-shrunk TMDB quality prior calibrated to the user's own standard; anti-join watched;
-  group mode scores each member separately and combines with least-misery.
+- **Phase 6 — Taste + recommend — BUILT, to be judged on the full catalog:** `src/recommend.py`
+  and `just recommend`; see the section above. Verified on the 1010-title catalog with 23 checks
+  (no watched film returned, penalty arithmetic exact to 0.0001, group = min of members, identical
+  members reproduce the single-user ranking); ~1.5 s per call. Whether the recommendations are
+  *good* cannot be judged on 1010 titles, and the scoring constants are untuned until the real
+  catalog lands.
 - **Phase 7 — Serving API (new):** FastAPI over the recommendation SQL with a connection pool built
   once at startup. This phase was missing from earlier versions of this roadmap, and it is the
   actual gap between "pipeline" and "product": every entry point was a CLI script.
@@ -165,9 +186,11 @@ regardless of `--target`. Reaching 50k+ means lowering the floor to roughly 20-5
 metadata quality for volume. Measured economics for a full run are in CLAUDE.md; the short version is
 that credits are negligible (~1-3 total) and the real costs are wall-clock time (~5.4h at 50k, ~8.6h
 at 80k) and local disk (~4.8-7.6 GB). Everything downstream
-(staging, marts, tests) is built on that 1000-title sample. The real load is the exit criterion for
-Phase 5 and runs through `catalog_ingest` (floor 100, ~24k titles, ~2.5h) — see the vote-floor
-decision below. Recommendations are not worth judging until it lands.
+(staging, marts, tests) is built on that 1000-title sample *until the real load lands*. That load is
+the exit criterion for Phase 5 and **started on 2026-11-16** through `catalog_ingest` (floor 100):
+the fetch returned **23,746 titles** (estimated 23,794 from sampling, see the vote-floor decision
+below), and the ~2.3h enrich is under way. Recommendation quality is not worth judging until it
+lands.
 
 ## Decisions made
 
@@ -236,6 +259,16 @@ decision below. Recommendations are not worth judging until it lands.
    - Freshness is a separate `pipeline_monitor` DAG rather than a step in `transform`: it is only
      meaningful on a clock, and a stale source should alert, not mark a good dbt build as failed.
 
+7. **Recommendation scoring (Phase 6).** No stored taste vector; profile = weighted films;
+   relevance = mean of the top-3 z-scored, weight-scaled similarities; dislikes as a per-candidate
+   penalty; quality judged against the user's own standard; group = least-misery. Rating map is
+   `rating - 3` (Letterboxd's midpoint), chosen over "relative to the user's mean" because this
+   diary averages 4.26 and 14 of its 17 films are 4 stars or more, which a relative scale would
+   turn into mild dislikes. Two things the first run exposed: per-seed similarity floors differ by
+   ~0.12 (hence z-scoring), and **titles are not unique** — two different films are each named
+   "Good Boy" and "The Killer" — so every result carries `media_key` and `tmdb_id`, and nothing may
+   key on title.
+
 ## Key open decisions (resolve at each phase)
 
 1. **TV in the catalog (deferred).** The catalog is movies-only. `APPEND_BY_TYPE_LEAN` has no `"tv"`
@@ -249,14 +282,17 @@ decision below. Recommendations are not worth judging until it lands.
    export (a CSV of full history) would lift it, but it is a manual user upload rather than a feed,
    which would change the shape of `diary_ingest` and of the API's onboarding flow. It also decides
    whether taste clustering is viable at all (it wants ~30+ rated films).
-3. **Query-side prefixing (Phase 6):** arctic-embed models are trained for asymmetric retrieval and
-   conventionally want a query prefix ("Represent this sentence for searching relevant
-   passages: "). `just search` currently embeds the raw string. Similarity scores land around
-   0.23-0.30, which is plausible but worth A/B-ing when the taste vector replaces the typed query.
-4. **Taste-vector formula (Phase 6):** how ratings weight the aggregate, and how dislikes are
-   handled (push away vs simply exclude).
-5. **Group aggregation (Phase 6):** average vs least-misery vs Borda for combining members' scores;
-   whether to exclude titles seen by *any* member; whether to require shared availability/language.
+3. **Query-side prefixing (free-text search only).** arctic-embed models are trained for asymmetric
+   retrieval and conventionally want a query prefix ("Represent this sentence for searching relevant
+   passages: "); `just search` embeds the raw string. This no longer touches recommendations, which
+   compare film documents with film documents (symmetric), only free-text search.
+4. **Tune the scoring constants on the real catalog.** `DISLIKE_WEIGHT` (0.5), `QUALITY_POWER` (2),
+   `TOP_N` (3) and `REWATCH_BONUS` (0.5) are reasoned defaults, not fitted. With 1010 titles the
+   quality discount is visibly strong (a 6.6-rated film is cut to x0.68); whether that is right is a
+   judgement to make on ~24k titles with Carson reading the output.
+5. **Presenting more than one taste (deferred).** Clustering a user's liked films into groups
+   ("your slashers / your sci-fi") would organize the *output*; the scoring doesn't need it, since
+   it never averages. It needs roughly 30+ rated films, which the ~50-entry RSS cap makes marginal.
 
 ---
 

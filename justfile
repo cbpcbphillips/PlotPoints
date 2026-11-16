@@ -28,6 +28,12 @@ smoke-test:
 load source:
     uv run src/load_snowflake.py {{source}}
 
+# --- Recommendations (Phase 6) ---
+
+# Recommend unwatched titles. One username = single user; several = a group (least-misery)
+recommend *args:
+    uv run src/recommend.py {{args}}
+
 # --- Orchestration (Phase 5) ---
 
 # Start the local Airflow stack in Docker (builds the image first run). UI: http://localhost:8080
