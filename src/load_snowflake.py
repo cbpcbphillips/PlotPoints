@@ -59,6 +59,15 @@ SOURCES = {
         "copy": copy_tmdb_titles,
         "prefix": "catalog",
     },
+    # Titles that a consented import mentioned but the catalog lacks (see user_ingest.py). Same
+    # lean profile and landing table as the catalog; a sub-prefix of catalog/ because that is the
+    # prefix the uploader's IAM policy already permits, so this needs no new grant.
+    "user_titles": {
+        "input": CHECKPOINT_DIR / "user_titles_enriched.jsonl",
+        "ensure": ensure_tmdb_titles_table,
+        "copy": copy_tmdb_titles,
+        "prefix": "catalog/user",
+    },
 }
 
 

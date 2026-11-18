@@ -14,3 +14,10 @@ data/
 .astro/*.local.yaml
 airflow.db
 airflow.cfg
+
+# Serving API build staging (a copy of data/snapshots/<version>, made by `just api-build`)
+/api/snapshot/
+
+# Frontend (Phase 8)
+node_modules/
+/web/dist/

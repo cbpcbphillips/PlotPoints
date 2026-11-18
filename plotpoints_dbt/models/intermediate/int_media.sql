@@ -36,6 +36,8 @@ select
     record:vote_count::number                as vote_count,
     record:collection_id::number             as collection_id,
     record:collection_name::string           as collection_name,
+    record:tmdb:poster_path::string          as poster_path,
+    record:tmdb:backdrop_path::string        as backdrop_path,
     record:seasons::number                   as seasons,
     record:episodes::number                  as episodes,
     record

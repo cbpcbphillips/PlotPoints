@@ -34,6 +34,33 @@ load source:
 recommend *args:
     uv run src/recommend.py {{args}}
 
+# --- Serving (Phase 7) ---
+
+# Export MART to a versioned serving snapshot in data/snapshots/ (add --upload to push it to S3)
+snapshot *args:
+    uv run src/publish_snapshot.py {{args}}
+
+# Run the API locally against the newest snapshot, with reload. http://localhost:8000/docs
+api:
+    uv run --group api uvicorn api.app:create_app --factory --reload --port 8000
+
+# Regenerate api/requirements.txt (the API image's pins) from uv.lock
+api-reqs:
+    uv export --frozen --no-hashes --no-dev --group api --no-emit-project -o api/requirements.txt
+
+# Build the API image: stages the newest snapshot into api/snapshot/, bakes it in
+api-build:
+    uv run src/publish_snapshot.py --stage api/snapshot
+    docker build -f api/Dockerfile -t plotpoints-api .
+
+# Run the API image locally on :8000
+api-run:
+    docker run --rm -p 8000:8000 plotpoints-api
+
+# Offline tests (scoring, API, parsing). `just test -m snowflake` adds the numpy-vs-SQL check
+test *args:
+    uv run --group api pytest {{args}}
+
 # --- Orchestration (Phase 5) ---
 
 # Start the local Airflow stack in Docker (builds the image first run). UI: http://localhost:8080
@@ -106,3 +133,9 @@ check:
 
 install-hooks:
     uv run pre-commit install
+
+# --- User inbox (Phase 7c) ---
+
+# Process the S3 inbox: land | delete | titles | purge | all  (needs PLOTPOINTS_INBOX unset or s3)
+user-ingest step="all":
+    uv run src/user_ingest.py {{step}}

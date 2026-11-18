@@ -105,13 +105,15 @@ actually resemble it.
 ## Orchestration (Airflow — BUILT, Phase 5)
 
 Astro Runtime 3.3 (Airflow 3.3, Python 3.14) in Docker, project at the repo root so the image
-contains `src/` and `plotpoints_dbt/`. Four DAGs, all manually triggered (`schedule=None`):
+contains `src/` and `plotpoints_dbt/`. Five DAGs; four are manually triggered, `transform` runs
+on the assets:
 
 | DAG | Trigger | Tasks |
 |---|---|---|
 | `catalog_ingest` | manual | preflight → fetch → enrich → load → emits `raw_tmdb_titles` asset |
 | `diary_ingest` | manual | preflight → fetch → enrich → load → emits `raw_diary_entries` asset |
-| `transform` | either asset updates | preflight → Cosmos task group (one task per dbt model/test) → cost record |
+| `user_ingest` | manual | preflight → land inbox → apply deletions → enrich new titles → load → purge landed files |
+| `transform` | any RAW asset updates | preflight → Cosmos task group (one task per dbt model/test) → cost record + **publish serving snapshot** |
 | `pipeline_monitor` | manual | source freshness · data-quality warnings · 24h warehouse cost (independent tasks) |
 
 The roadmap's earlier four-DAG sketch (`catalog_refresh`, `user_ingest`, `embed`, `recommend`)
@@ -157,40 +159,64 @@ pool makes the rate limit hold across everything Airflow schedules.
 - **Phase 4 — Cortex embeddings — DONE:** `int_media_document` + `media_embeddings` (incremental,
   `arctic-embed-l-v2.0`, 1024-dim) → `MART.MEDIA_EMBEDDINGS`, plus `just search` for semantic
   lookup. `just dbt build` runs green at PASS=45.
-- **Phase 5 — Orchestration + monitoring + containerization (IN PROGRESS):** the Airflow DAGs
-  above, the dbt monitoring models, and the Docker image. Exit criterion: the real catalog load
-  runs *through* `catalog_ingest` as the pipeline's first production run, not by hand.
-- **Phase 6 — Taste + recommend — BUILT, to be judged on the full catalog:** `src/recommend.py`
-  and `just recommend`; see the section above. Verified on the 1010-title catalog with 23 checks
-  (no watched film returned, penalty arithmetic exact to 0.0001, group = min of members, identical
-  members reproduce the single-user ranking); ~1.5 s per call. Whether the recommendations are
-  *good* cannot be judged on 1010 titles, and the scoring constants are untuned until the real
-  catalog lands.
-- **Phase 7 — Serving API (new):** FastAPI over the recommendation SQL with a connection pool built
-  once at startup. This phase was missing from earlier versions of this roadmap, and it is the
-  actual gap between "pipeline" and "product": every entry point was a CLI script.
-- **Phase 8 — Frontend:** localhost first, deployment optional. Scope stays thin until the API's
-  response shapes are real.
+- **Phase 5 — Orchestration + monitoring + containerization — DONE:** the Airflow DAGs above, the
+  dbt monitoring models, and the Docker image. Exit criterion met on 2026-11-16: the real catalog
+  load ran *through* `catalog_ingest` (23,746 titles, 2h33m end to end, no retries needed), and
+  `transform` fired on its own and embedded the lot.
+- **Phase 6 — Taste + recommend — DONE:** `src/recommend.py` and `just recommend`; see the section
+  above. Verified with 23 checks on both the 1010-title and the full 23.7k catalog (no watched film
+  returned, penalty arithmetic exact to 0.0001, group = min of members, identical members reproduce
+  the single-user ranking); 1.3-2.0 s per call warm. The first full-catalog run was read critically
+  and found two real defects (a short film and a making-of documentary recommended), fixed with a
+  runtime floor; franchise saturation remains an open decision.
+- **Phase 7 — Serving — BUILT (2026-11-16); AWS inbox permissions and deploy remain:**
+  - *7a, snapshot.* [../src/publish_snapshot.py](../src/publish_snapshot.py) (`just snapshot`)
+    exports vectors (float16, unit-normalized) plus the title/rating/poster/franchise/provider
+    columns the app shows to `data/snapshots/<content-hash>/`; the `transform` DAG ends with it and
+    uploads to S3 `artifacts/snapshots/`. Verified: the Airflow-built snapshot has the same content
+    hash as the local one. dbt gained `bridge_media_provider` (209 raw provider names -> 171 groups),
+    a `franchise` column (explicit merge seed, else the TMDB collection), and poster paths.
+  - *7b, API.* [../api/](../api/) (FastAPI) + [../src/scoring.py](../src/scoring.py), the numpy
+    port of the SQL scorer. **Equivalence verified against live Snowflake**: same top-50 in the same
+    order, max score difference 0.0002 (float16), single user, dislike-penalty off, and a group.
+    ~40 ms per request, 225 MB resident in the Docker image. Endpoints: `/recommend` (with provider
+    filter inside the ranking, plus each title's overall rank), `/franchises`, `/import/letterboxd`,
+    `/match` (title+year -> TMDB id, flagging ambiguity), `/consent`, `/delete`, `/meta`.
+  - *7c, inbox.* [../src/user_ingest.py](../src/user_ingest.py) and the `user_ingest` DAG land the
+    S3 inbox in `RAW.USER_IMPORTS` / `RAW.USER_DELETIONS`, delete on request, enrich titles the
+    catalog lacks, and purge landed files. dbt unions imports into `fct_diary_entry` with a `source`
+    column. **Not yet run against real S3**: it needs two IAM changes (see "Still to do").
+- **Phase 8 — Frontend — BUILT (2026-11-16):** [../web/](../web/), React + Vite + TypeScript +
+  Tailwind v4, 138 KB gzipped. Import (export zip/CSVs parsed in the browser, or a username), For
+  You, Franchises, Streaming, Import (returning), About, Privacy/deletion. Desktop, tablet (hero and
+  grid) and phone layouts verified in a browser at 1440, 820 and 402 px; light and dark.
+
+### Still to do for Phases 7-8
+
+1. **AWS (needs the console):** a new IAM user for the API with `s3:PutObject` on `inbox/*` only, and
+   `s3:DeleteObject` on `inbox/*` for the pipeline uploader. Then run the inbox round trip for real
+   (consent -> `just user-ingest` -> delete) and set `PLOTPOINTS_INBOX=s3` on the API.
+2. **Deploy:** choose the API host (decision 8: Cloud Run or Render), host `web/dist` statically, set
+   `VITE_API_URL` and `PLOTPOINTS_CORS_ORIGINS`.
+3. **TMDB logo** (their brand asset, not in the repo) next to the disclaimer on the About page;
+   currently text only. Required for a public site.
+4. **Posters.** The app uses the chosen title-on-color tiles; real images come from TMDB's image CDN
+   and carry the same attribution requirement.
 
 ### Where the data actually stands
 
-The catalog holds **1000 titles** spanning several years (a `--limit 1000` trial run on
-2026-09-26), replacing the earlier 60-title sample that was entirely 2026 releases. 1009 documents
-and embeddings exist — 1000 catalog titles plus 9 diary-only ones. Semantic search is visibly
-better for it: "gritty crime drama about organized crime families" now returns a clean run of crime
-films at 0.33-0.35 similarity, against 0.23-0.30 on the 60-title sample.
+The catalog is **23,747 titles** (23,746 from the 2026-11-16 `catalog_ingest` run, floor 100, plus one
+diary-only film), spanning **1900-2026**, all embedded: `mart_embedding_coverage` reports coverage
+1.0000 with 0 missing and 0 stale, the new batch has a match rate of 1.0, and under 0.4% of titles
+lack any key field (0.07% no overview, 0.31% no cast). The fetch returned 23,746 against a
+sampling-based estimate of 23,794 (see the vote-floor decision below).
 
-Still short of a full catalog, and there's a supply ceiling worth knowing: only **14,952 movies have
-`vote_count >= 200`**, so the current `DEFAULT_MIN_VOTES` caps the achievable catalog near 15k
-regardless of `--target`. Reaching 50k+ means lowering the floor to roughly 20-50 votes, which trades
-metadata quality for volume. Measured economics for a full run are in CLAUDE.md; the short version is
-that credits are negligible (~1-3 total) and the real costs are wall-clock time (~5.4h at 50k, ~8.6h
-at 80k) and local disk (~4.8-7.6 GB). Everything downstream
-(staging, marts, tests) is built on that 1000-title sample *until the real load lands*. That load is
-the exit criterion for Phase 5 and **started on 2026-11-16** through `catalog_ingest` (floor 100):
-the fetch returned **23,746 titles** (estimated 23,794 from sampling, see the vote-floor decision
-below), and the ~2.3h enrich is under way. Recommendation quality is not worth judging until it
-lands.
+Run economics, measured: fetch ~8 min, enrich ~2.35 h at 2.69 titles/s (the Sept trial's 1000 titles
+were reused through resume), `transform` 1.5 min, **2h33m end to end**. Only 14,952 movies have 200+
+votes, so the catalog's size is set by the floor, not by `--target`.
+
+Still a **single-user** dataset: one Letterboxd diary (`VetOW`, 17 entries). Group mode is verified
+only on a synthetic split of it.
 
 ## Decisions made
 
@@ -268,6 +294,71 @@ lands.
    ~0.12 (hence z-scoring), and **titles are not unique** — two different films are each named
    "Good Boy" and "The Killer" — so every result carries `media_key` and `tmdb_id`, and nothing may
    key on title.
+   The first run on the full catalog added a runtime floor: candidates under 60 minutes are
+   skipped (`--min-runtime`), because the vote floor does not keep out shorts and making-ofs. It
+   recommended an 18-minute short of *Whiplash* (the film the feature grew from) and a 23-minute
+   *Interstellar* documentary; both are different titles from the films watched, so the
+   already-watched filter could not catch them. The floor touches 3.4% of the catalog and keeps
+   every real feature in the borderline band (*Dumbo*, 64 min). It applies to candidates only, so
+   shorts you have watched still count as taste signal.
+
+8. **Serving and frontend stack (Phase 7-8).** Decided 2026-11-16.
+   - **Serve from an exported snapshot, not live Snowflake.** All 23,747 vectors are 97 MB as
+     float32 and 49 MB as float16, small enough to hold in memory and rank with numpy in
+     milliseconds. A public URL backed by live Snowflake would let anyone spend warehouse credits,
+     and the 25-credit monitor suspends the warehouse the pipeline also uses; it would also put a
+     private key in the hosting environment and add cold-warehouse latency. Snowflake stays the batch
+     side. Cost: the scorer exists twice (SQL for batch and tests, numpy for serving), so
+     equivalence is a tested property, and the pipeline gains a publish step.
+   - **Frontend:** React + Vite + TypeScript + Tailwind. It builds to static files, so any free
+     static host works (Cloudflare Pages, Vercel Hobby); Cloudflare Pages caps a single asset at
+     25 MiB, which is why the vectors live with the API and not on the static host.
+   - **API host: undecided on purpose.** Build a Docker image that runs locally and on either
+     candidate. Verified: Cloud Run's free tier is 2M requests, 180k vCPU-seconds and 360k GiB-seconds
+     a month, scales to zero, and needs a billing account; Render's free tier gives 750 instance hours
+     but sleeps after 15 minutes and takes about a minute to wake, and Render says not to use it for
+     production. **Hugging Face Docker Spaces are not free** (only static Spaces are).
+   - **Stateless serving, ingesting pipeline.** The app has no accounts or sessions. Imports are
+     parsed in the browser and sent with each request. Separately, with consent, an import is dropped
+     in an S3 inbox for the batch pipeline. The API's only AWS credential is write-only on that
+     prefix, so a leaked key can add files but cannot read anything or touch Snowflake.
+   - **Compliance that is not optional on a public site:** TMDB requires its logo and the sentence
+     "This product uses the TMDB API but is not endorsed or certified by TMDB" in an About or Credits
+     area; free use is non-commercial (a project whose primary purpose is revenue needs a license).
+     Streaming availability must be attributed to **JustWatch**, and TMDB can revoke API access for
+     not doing so. Show an "as of <date>, US only" label, since availability is a snapshot.
+
+9. **Serving behaviour (Phase 7-8).** Decided 2026-11-16.
+   - **The match percentage is raw cosine similarity**, shown as a whole percent: the mean cosine
+     between a recommendation and the three liked films that explain it. The ranking is *not* by
+     this number; it stays on the z-scored score (the hubness correction in decision 7), because raw
+     cosine lets high-floor films dominate. Consequence, stated on the About page: percentages are
+     not strictly decreasing down the list. Measured on the real catalog: top picks land at 51-64%
+     and unrelated films at 30-40%, so a "good" match is a modest-looking number. A percentile
+     was rejected (every top-20 pick would read 99%) and a star rating was rejected (nothing fits
+     it).
+   - **A provider filter is applied inside the ranking, after the per-seed z-scoring.** Restricting
+     the pool first would change every title's score; filtering after means a title scores the same
+     with or without the filter and only the set that competes changes. Each filtered result also
+     reports its rank in the unfiltered list ("overall 22").
+   - **Providers are grouped** (209 raw names -> 171): tier and channel suffixes are stripped
+     ("Netflix Standard with Ads", "HBO Max Amazon Channel") and a seed maps brands TMDB spells two
+     ways. Only subscription (flatrate) counts as "can watch".
+   - **Franchises, first cut:** an explicit `collection_id -> franchise` seed merges the multi-
+     collection series (Spider-Man's four collections, the MCU's eight, X-Men, Godzilla, Star Trek and
+     so on), else the TMDB collection name, else none. Reviewable and wrong in known ways; the
+     fuller model remains open decision 8.
+   - **Imports and rewatches.** An import is a set of films seen and rated, not watch events. The
+     recommender counts a rewatch only from dated RSS rows or an import's own Rewatch flag, so a
+     film present in both is not double-counted. Inside a Letterboxd zip only the three exact
+     top-level CSVs are read: `watchlist.csv` and `likes/films.csv` share watched.csv's columns and
+     would otherwise mark unwatched films as seen.
+   - **Deletion without accounts:** consent returns a random token once; only its SHA-256 is stored.
+     `user_ingest` deletes the rows and purges the S3 files, and dbt also excludes any import whose
+     hash has a tombstone, so a missed run cannot leak a deleted import. Time Travel can still hold
+     deleted rows for its retention window.
+   - **Snapshot baked into the image**, not read at start-up: the running API needs no AWS read
+     credential and every deploy serves exactly one known version of the data.
 
 ## Key open decisions (resolve at each phase)
 
@@ -286,13 +377,56 @@ lands.
    retrieval and conventionally want a query prefix ("Represent this sentence for searching relevant
    passages: "); `just search` embeds the raw string. This no longer touches recommendations, which
    compare film documents with film documents (symmetric), only free-text search.
-4. **Tune the scoring constants on the real catalog.** `DISLIKE_WEIGHT` (0.5), `QUALITY_POWER` (2),
-   `TOP_N` (3) and `REWATCH_BONUS` (0.5) are reasoned defaults, not fitted. With 1010 titles the
-   quality discount is visibly strong (a 6.6-rated film is cut to x0.68); whether that is right is a
-   judgement to make on ~24k titles with Carson reading the output.
-5. **Presenting more than one taste (deferred).** Clustering a user's liked films into groups
+4. **Tune the scoring constants — now possible, needs Carson's judgement.** `DISLIKE_WEIGHT` (0.5),
+   `QUALITY_POWER` (2), `TOP_N` (3) and `REWATCH_BONUS` (0.5) are reasoned defaults, not fitted. On
+   the full catalog the quality discount is mild (most results x0.83-1.0) and the dislike penalty
+   small (<= ~0.35 against scores of 2-4). Whether that balance is right is a reading of the output,
+   not a number to derive.
+5a. **Franchise saturation.** For Carson's diary, 6 of the top 10 are Spider-Man films and 11 of 20
+   are Marvel/DC. This is the scoring working as designed: three liked Spider-Man films give every
+   Spider-Man film a perfect top-3, while one diary film each for Whiplash/Good Will Hunting/
+   Moneyball cannot. Options, none applied: cap results per TMDB `collection_id`; re-rank for
+   diversity (MMR) over the top-100; or cluster the liked films and take the best few per cluster.
+5b. **"Unwatched" is only as good as the history.** The RSS feed shows 17 films, so *Iron Man*,
+   *Inception* and *Avengers: Endgame* appear because the system cannot know they were seen long
+   ago. This is the RSS-cap decision again, and it is the biggest limit on how good the output can
+   get — a full-history CSV import would improve it more than any scoring change.
+6. **Presenting more than one taste (deferred).** Clustering a user's liked films into groups
    ("your slashers / your sci-fi") would organize the *output*; the scoring doesn't need it, since
    it never averages. It needs roughly 30+ rated films, which the ~50-entry RSS cap makes marginal.
+
+7. **Platform filtering belongs inside the ranking.** Measured on real output: only 35 of the top 400
+   recommendations stream on Netflix, and the best of them (*Alien*) is overall rank 22. Filtering a
+   finished list would surface rank-22 as "your top Netflix pick" and hide better matches. The
+   provider filter must restrict the candidate set before scoring. Also: 209 distinct streaming
+   providers appear, and "Netflix" and "Netflix Standard with Ads" are listed separately, so the UI
+   needs a normalized provider list. Availability is a Nov-16 snapshot with its own refresh cadence.
+8. **What is a "franchise"?** TMDB collections are too narrow: Spider-Man spans four collections
+   (Raimi, Amazing, MCU, Spider-Verse), the MCU at least five, and only 21% of the catalog belongs to
+   a collection at all (36% of the top 80 recommendations belong to none). A franchise-grouping model
+   is needed: merge collections via shared keywords or an explicit merge table, and decide what to do
+   with standalone films.
+9. **Letterboxd export import** (extends the RSS-cap decision above). The CSVs carry title, year and a
+   Letterboxd link but no TMDB id, so films are matched on title and year, which collides (two films
+   are named "Good Boy"). Films outside the catalog have no embedding and must be reported as
+   unmatched. Combining RSS and CSV rows for one film must not trigger the rewatch bonus.
+   **Built in Phase 7-8** (see decision 9): the browser parses the export, `/match` resolves title+year
+   (a year either side tolerated, the most-voted film winning and the row flagged ambiguous), and
+   `build_profiles` counts a rewatch only from RSS rows. Not yet verified on a real export zip, only
+   on a synthetic one in unit tests.
+10. **Consent and deletion for ingested users.** Storing someone's viewing history in the warehouse
+    needs a clear consent notice at import time and a way to delete it, even though the RSS feed is
+    public and an export is private. **Built in Phase 7-8** (consent checkbox, deletion token, the
+    `user_ingest` delete/purge steps); awaiting the AWS permissions and a real round trip.
+11. **API host** (Cloud Run vs Render), decided at deploy time; the image is host-agnostic and is
+    measured at ~225 MB resident, inside either free tier's memory.
+12. **Obscure imported titles join the recommendable catalog.** `user_ingest` enriches films a
+    person imported that the catalog lacks, and they are then embedded and served to everyone,
+    including titles under the 100-vote floor. A candidate vote floor in both scorers (they
+    already share constants) would keep seeds unrestricted and candidates clean.
+13. **Light-mode accent vs body text.** Vault 24 `#3F3327` has 10.1:1 contrast on the page, but only
+    1.31:1 against the body text, so the accent reads nearly as text in light mode. WCAG does not
+    require a gap; whether it is enough to look intentional is a judgement for the running app.
 
 ---
 

@@ -95,6 +95,19 @@ models:
                 to: ref('dim_keyword')
                 field: keyword_id
 
+  - name: bridge_media_provider
+    description: US subscription (flatrate) streaming, one row per title and raw provider name.
+    columns:
+      - name: media_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_media')
+                field: media_key
+      - name: provider_group
+        tests: [not_null]
+
   - name: mart_pipeline_health
     description: >
       Per-load-batch health of the RAW landings: row counts, enrichment match rate and

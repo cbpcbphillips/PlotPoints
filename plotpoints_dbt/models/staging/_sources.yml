@@ -18,3 +18,13 @@ sources:
         description: One row per Letterboxd watch event; natural key (letterboxd_username, guid).
       - name: tmdb_titles
         description: One row per catalog title; natural key (media_type, tmdb_id).
+      - name: user_imports
+        description: >
+          One row per consented import, landed from the S3 inbox the API writes to. `record`
+          holds the payload (user_id, source, films). Deleted on request by user_ingest.
+        config:
+          freshness: null   # imports arrive when people choose to; silence is not a failure
+      - name: user_deletions
+        description: Deletion requests (SHA-256 of a one-time token), kept as tombstones.
+        config:
+          freshness: null

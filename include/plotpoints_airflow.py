@@ -25,6 +25,8 @@ DBT_EXECUTABLE = "/usr/local/airflow/dbt_venv/bin/dbt"
 # declares one as an outlet; `transform` is scheduled on them, so it runs when data actually
 # changed rather than on a clock, and ingests never need to know transform exists.
 RAW_TMDB_TITLES = Asset(name="raw_tmdb_titles", uri="snowflake://PLOTPOINTS_DB/RAW/TMDB_TITLES")
+RAW_USER_IMPORTS = Asset(name="raw_user_imports", uri="snowflake://PLOTPOINTS_DB/RAW/USER_IMPORTS")
+SERVING_SNAPSHOT = Asset(name="serving_snapshot", uri="plotpoints://serving/snapshot")
 RAW_DIARY_ENTRIES = Asset(
     name="raw_diary_entries", uri="snowflake://PLOTPOINTS_DB/RAW/DIARY_ENTRIES"
 )

@@ -40,10 +40,17 @@ src/
   check_aws.py                 connection check — AWS S3
   check_common.py              shared PASS/WARN/FAIL harness for the checks
   search_media.py              semantic search over MART.MEDIA_EMBEDDINGS
-  recommend.py                 recommendations from a diary (single user or group)
+  recommend.py                 recommendations from a diary (single user or group), as SQL
+  scoring.py                   the same scorer in numpy (what the API serves) + shared constants
+  snapshot.py                  the serving snapshot format (vectors + catalog, float16)
+  publish_snapshot.py          MART -> versioned snapshot (-> S3); `just snapshot`
+  user_ingest.py               S3 inbox -> RAW: consented imports, deletions, new titles
   pipeline_cost.py             estimated warehouse credits for recent activity
   paths.py                     checkpoint location (PLOTPOINTS_DATA_DIR)
-dags/                          Airflow DAGs (catalog_ingest, diary_ingest, transform, pipeline_monitor)
+api/                           the serving API (FastAPI) and its Dockerfile
+web/                           the frontend (React + Vite + TypeScript + Tailwind)
+tests/                         pytest: scoring, API, and the numpy-vs-SQL equivalence check
+dags/                          Airflow DAGs (catalog_ingest, diary_ingest, user_ingest, transform, pipeline_monitor)
 include/                       Airflow-only helpers (src/ never imports Airflow)
 scripts/                       build tooling (generates the image's requirements.txt)
 Dockerfile                     Astro Runtime image: src/, plotpoints_dbt/, and dbt in its own venv
@@ -97,6 +104,9 @@ creates the RAW landing objects if they're missing.
 ```bash
 just recommend VetOW                  # one user
 just recommend VetOW someone_else     # a group: "what should we watch together?"
+just recommend VetOW --k 40           # more results
+just recommend VetOW --min-runtime 0  # allow shorts and specials (default skips < 60 min)
+just recommend VetOW --json           # machine-readable, with media_key and tmdb_id
 ```
 
 Each title comes back with *why*: the three films from your diary it resembles most. A few design
@@ -116,6 +126,34 @@ choices worth knowing:
 
 It is request-time SQL over the embeddings, not a dbt model, so a new user gets an answer as soon
 as their diary lands. See `docs/roadmap.md` for the reasoning and measurements.
+
+## Serving and frontend
+
+Snowflake is the batch side. What a visitor touches never queries it: `just snapshot` exports the
+embeddings and what the app shows (title, year, rating, poster path, franchise, US streaming
+providers) to a versioned, content-hashed snapshot (23.7k titles, ~49 MB of float16 vectors), and
+the API holds that in memory.
+
+```bash
+just snapshot            # MART -> data/snapshots/<version>/   (the transform DAG also does this, and uploads)
+just api                 # FastAPI on :8000 with reload, http://127.0.0.1:8000/docs
+cd web && npm install && npm run dev    # the app on :5173, proxying /api to the API
+just api-build           # stage the snapshot and build the API image
+just api-run             # run that image on :8000
+just test                # offline pytest (scoring, API); `just test -m snowflake` adds numpy-vs-SQL
+cd web && npm test       # frontend unit tests (the Letterboxd export parser)
+```
+
+- **The scorer exists twice, on purpose**: SQL in `recommend.py` (batch, tests, ad hoc) and numpy in
+  `scoring.py` (served, ~40 ms per request). They share their constants, and
+  `tests/test_equivalence.py` holds them to the same ranking against live Snowflake.
+- **No accounts.** The browser sends a person's films with each request; the API computes an answer
+  and forgets it. An import is parsed in the browser; only (TMDB id, rating, rewatch) rows leave it.
+- **Consented imports** go to an S3 `inbox/` through a write-only credential, and the `user_ingest`
+  DAG lands them in `RAW.USER_IMPORTS`. Deletion is by a one-time token, kept only in the person's
+  browser, whose hash is the only thing stored; `user_ingest` deletes the rows and purges the files.
+- **The match percentage** is the raw cosine similarity between a recommendation and the films that
+  explain it, not the ranking score. See the About page, and `docs/roadmap.md` decision 9.
 
 ## Orchestration (Airflow)
 

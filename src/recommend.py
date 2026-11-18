@@ -42,19 +42,20 @@ from dotenv import load_dotenv
 
 from connection.snowflake import get_snowflake_connection
 
+# The constants and weight_for live in scoring.py (pure, no Snowflake) so this SQL scorer and the
+# API's numpy scorer cannot drift apart. They are re-exported here for the CLI and its callers.
+from scoring import (
+    DISLIKE_WEIGHT,
+    MIN_RUNTIME_MINUTES,
+    QUALITY_POWER,
+    QUALITY_PRIOR_VOTES,
+    RATING_MIDPOINT,
+    REWATCH_BONUS,  # noqa: F401
+    TOP_N,
+    weight_for,
+)
+
 load_dotenv()
-
-# Letterboxd's half-star scale: 3 stars is "fine", so 4+ is liked and below 3 is disliked.
-# Chosen over "relative to the user's own mean": for a user who rates high (this diary's mean
-# is 4.26) that would turn their 4-star films into dislikes.
-RATING_MIDPOINT = 3.0
-# Coming back to a film you already liked is a stronger signal than the rating alone.
-REWATCH_BONUS = 0.5
-
-TOP_N = 3  # a candidate's relevance is the mean of its N best matches among liked films
-DISLIKE_WEIGHT = 0.5
-QUALITY_PRIOR_VOTES = 100  # shrinkage strength; equals the catalog's vote floor
-QUALITY_POWER = 2.0  # how steeply being below the member's own standard is discounted
 
 
 def _database() -> str:
@@ -79,16 +80,6 @@ def embedding_model(conn) -> str:
     return row[0]
 
 
-def weight_for(rating: float | None, rewatched: bool) -> float | None:
-    """Signed taste weight for one film: positive liked, negative disliked, None unrated."""
-    if rating is None:
-        return None
-    weight = rating - RATING_MIDPOINT
-    if weight > 0 and rewatched:
-        weight += REWATCH_BONUS
-    return weight
-
-
 def build_profiles(conn, usernames: list[str]) -> dict[str, list[dict]]:
     """{member: [{media_key, weight}]} from the diary fact, one row per film.
 
@@ -101,7 +92,7 @@ def build_profiles(conn, usernames: list[str]) -> dict[str, list[dict]]:
 
     with conn.cursor() as cur:
         cur.execute(
-            f"select user_id, media_key, rating, rewatch, watched_date "
+            f"select user_id, media_key, rating, rewatch, watched_date, source "
             f"from {_database()}.MART.FCT_DIARY_ENTRY "
             f"where lower(user_id) in ({placeholders}) and media_key is not null "
             f"order by user_id, media_key, watched_date desc nulls last",
@@ -109,16 +100,18 @@ def build_profiles(conn, usernames: list[str]) -> dict[str, list[dict]]:
         )
         rows = cur.fetchall()
 
+    # (rating, rewatch flag, is a dated RSS watch). An import row says "seen and rated" but is not
+    # a watch event: a film in both an RSS diary and an export must not look like a rewatch.
     by_film: dict[tuple[str, str], list] = defaultdict(list)
-    for user_id, media_key, rating, rewatch, _watched in rows:
-        by_film[(user_id, media_key)].append((rating, bool(rewatch)))
+    for user_id, media_key, rating, rewatch, _watched, source in rows:
+        by_film[(user_id, media_key)].append((rating, bool(rewatch), source == "letterboxd_rss"))
 
     profiles: dict[str, list[dict]] = defaultdict(list)
     for (user_id, media_key), watches in by_film.items():
         latest_rating = next(
-            (r for r, _ in watches if r is not None), None
+            (r for r, _, _ in watches if r is not None), None
         )  # rows are newest first
-        rewatched = len(watches) > 1 or any(flag for _, flag in watches)
+        rewatched = sum(rss for _, _, rss in watches) > 1 or any(flag for _, flag, _ in watches)
         profiles[user_id].append(
             {
                 "media_key": media_key,
@@ -166,6 +159,7 @@ candidates as (
     join {db}.MART.DIM_MEDIA m on m.media_key = e.media_key
     where e.embedding_model = %(model)s
       and e.media_key not in (select media_key from watched)
+      and (m.runtime_minutes is null or m.runtime_minutes >= %(min_runtime)s)
 ),
 
 -- strongest love per member, so weights normalize to (0, 1] and members share a scale
@@ -275,6 +269,7 @@ def score_profiles(
     dislike_weight: float = DISLIKE_WEIGHT,
     top_n: int = TOP_N,
     quality_power: float = QUALITY_POWER,
+    min_runtime: int = MIN_RUNTIME_MINUTES,
 ) -> list[dict]:
     """Rank unwatched titles for one profile or a group. See the module docstring.
 
@@ -296,6 +291,7 @@ def score_profiles(
         "top_n": top_n,
         "dislike_weight": dislike_weight,
         "quality_power": quality_power,
+        "min_runtime": min_runtime,
         "prior_votes": QUALITY_PRIOR_VOTES,
         "k": k,
     }
@@ -337,12 +333,17 @@ def score_profiles(
 
 
 def recommend(
-    usernames: list[str], k: int = 20, dislike_weight: float = DISLIKE_WEIGHT
+    usernames: list[str],
+    k: int = 20,
+    dislike_weight: float = DISLIKE_WEIGHT,
+    min_runtime: int = MIN_RUNTIME_MINUTES,
 ) -> list[dict]:
     """Recommendations for one user, or a group (least-misery) when given several."""
     with get_snowflake_connection() as conn:
         profiles = build_profiles(conn, usernames)
-        return score_profiles(conn, profiles, k=k, dislike_weight=dislike_weight)
+        return score_profiles(
+            conn, profiles, k=k, dislike_weight=dislike_weight, min_runtime=min_runtime
+        )
 
 
 def _print(results: list[dict]) -> None:
@@ -378,6 +379,12 @@ def main():
         default=DISLIKE_WEIGHT,
         help="strength of the penalty for resembling a disliked film (0 disables it)",
     )
+    parser.add_argument(
+        "--min-runtime",
+        type=int,
+        default=MIN_RUNTIME_MINUTES,
+        help="skip candidates shorter than this many minutes (0 allows shorts and specials)",
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
 
@@ -385,7 +392,12 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     try:
-        results = recommend(args.usernames, k=args.k, dislike_weight=args.dislike_weight)
+        results = recommend(
+            args.usernames,
+            k=args.k,
+            dislike_weight=args.dislike_weight,
+            min_runtime=args.min_runtime,
+        )
     except RuntimeError as exc:  # expected user errors (unknown user, no liked films), not bugs
         raise SystemExit(f"error: {exc}") from None
     if not results:

@@ -1,11 +1,14 @@
 """Transform: dbt build of the whole star schema, including the Cortex embeddings.
 
-Not triggered by hand in normal use. It is scheduled on the two RAW assets, so it runs
-whenever catalog_ingest or diary_ingest lands rows -- and once, not twice, if both did.
+Not triggered by hand in normal use. It is scheduled on the RAW assets, so it runs whenever
+catalog_ingest, diary_ingest or user_ingest lands rows -- once, not several times, if more than
+one did. It ends by publishing the serving snapshot the API is built from (publish_snapshot.py).
 
 Cosmos renders the dbt project as one Airflow task per model and per test, so a failure
 names the exact model and a retry reruns only that node, not all of dbt.
 """
+
+from datetime import timedelta
 
 import pendulum
 from airflow.sdk import dag, task
@@ -19,6 +22,8 @@ from include.plotpoints_airflow import (
     PREFLIGHT,
     RAW_DIARY_ENTRIES,
     RAW_TMDB_TITLES,
+    RAW_USER_IMPORTS,
+    SERVING_SNAPSHOT,
     notify_failure,
     run_preflight,
 )
@@ -36,7 +41,7 @@ PROFILE = ProfileConfig(
     dag_id="transform",
     # `|` = run when EITHER asset updates. A bare list means ALL of them, which would make
     # a diary-only ingest wait forever for a catalog update that isn't coming.
-    schedule=(RAW_TMDB_TITLES | RAW_DIARY_ENTRIES),
+    schedule=(RAW_TMDB_TITLES | RAW_DIARY_ENTRIES | RAW_USER_IMPORTS),
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,
@@ -84,7 +89,19 @@ def transform():
         print(f"run {run_id}: {result}")
         return result
 
-    preflight() >> dbt >> record_cost()
+    @task(
+        outlets=[SERVING_SNAPSHOT],
+        retries=1,
+        retry_delay=timedelta(minutes=2),
+        execution_timeout=timedelta(minutes=30),
+    )
+    def publish_snapshot() -> dict:
+        """Export the freshly built marts for the API and upload them to S3 artifacts/."""
+        import publish_snapshot as snapshot_step
+
+        return snapshot_step.run(upload=True)
+
+    preflight() >> dbt >> [record_cost(), publish_snapshot()]
 
 
 transform()

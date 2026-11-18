@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens from the approved canvas. Two palettes, one set of names; Tailwind utilities
+ * (bg-bg, text-muted, border-line ...) read them through the @theme block, so a theme switch is
+ * one attribute on <html> and nothing in a component changes.
+ *
+ * Light accent #3F3327 measures 10.1:1 worst case on the page, white and chip backgrounds.
+ * Dark accent #CDB08C on slate #1C2128 passes AAA for text.
+ */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface2: #e7e9ed;
+  --line: #dde0e5;
+  --text: #1d2229;
+  --muted: #586270;
+  --accent: #3f3327;
+  --on: #ffffff;
+  --field: #818a97;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #1c2128;
+    --surface: #252b34;
+    --surface2: #303845;
+    --line: #394150;
+    --text: #ece9e3;
+    --muted: #a9b0bb;
+    --accent: #cdb08c;
+    --on: #1c2128;
+    --field: #75808f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #1c2128;
+  --surface: #252b34;
+  --surface2: #303845;
+  --line: #394150;
+  --text: #ece9e3;
+  --muted: #a9b0bb;
+  --accent: #cdb08c;
+  --on: #1c2128;
+  --field: #75808f;
+  color-scheme: dark;
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-line: var(--line);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on: var(--on);
+  --color-field: var(--field);
+  --font-sans: Calibri, Carlito, 'Segoe UI', system-ui, sans-serif;
+}
+
+html {
+  background: var(--bg);
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+@media (min-width: 1024px) {
+  body {
+    font-size: 19px;
+    line-height: 1.55;
+  }
+}
+
+/* The chosen hover animation: "press" -- the thing sinks 2px. Disabled for reduced motion. */
+.press {
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
+}
+@media (hover: hover) {
+  .press:hover {
+    transform: translateY(2px);
+  }
+}
+.press:active {
+  transform: translateY(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:hover,
+  .press:active {
+    transition: none;
+    transform: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.rowp:hover {
+  background: var(--surface);
+}
+
+/* Title-on-color tiles (the chosen poster style; real posters can replace them later). One class
+   per tone, with the dark palette applied under either the OS preference or the explicit toggle. */
+.tone-0 { background: #d9c7ad; color: #1d2229; }
+.tone-1 { background: #b9a58c; color: #1d2229; }
+.tone-2 { background: #aeb8c4; color: #1d2229; }
+.tone-3 { background: #cdbba3; color: #1d2229; }
+.tone-4 { background: #98a4b3; color: #1d2229; }
+.tone-5 { background: #e4d5bf; color: #1d2229; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .tone-0 { background: #cdb08c; color: #1c2128; }
+  :root:not([data-theme='light']) .tone-1 { background: #7d6a56; color: #f4f1ec; }
+  :root:not([data-theme='light']) .tone-2 { background: #5f6b7a; color: #f4f1ec; }
+  :root:not([data-theme='light']) .tone-3 { background: #a89279; color: #1c2128; }
+  :root:not([data-theme='light']) .tone-4 { background: #4a5563; color: #f4f1ec; }
+  :root:not([data-theme='light']) .tone-5 { background: #d8c4a6; color: #1c2128; }
+}
+:root[data-theme='dark'] .tone-0 { background: #cdb08c; color: #1c2128; }
+:root[data-theme='dark'] .tone-1 { background: #7d6a56; color: #f4f1ec; }
+:root[data-theme='dark'] .tone-2 { background: #5f6b7a; color: #f4f1ec; }
+:root[data-theme='dark'] .tone-3 { background: #a89279; color: #1c2128; }
+:root[data-theme='dark'] .tone-4 { background: #4a5563; color: #f4f1ec; }
+:root[data-theme='dark'] .tone-5 { background: #d8c4a6; color: #1c2128; }

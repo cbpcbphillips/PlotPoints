@@ -196,3 +196,105 @@ def copy_tmdb_titles(conn: snowflake.connector.SnowflakeConnection, stage_prefix
             raise RuntimeError(f"Failed to COPY into {table} from {stage_ref}: {exc}.") from exc
 
     return _rows_loaded(results)
+
+
+# --- User inbox (Phase 7c): consented imports and deletion requests ---------------------------
+#
+# Both land from the S3 `inbox/` prefix the API writes to. They are not enriched documents like the
+# two tables above but small records the API authored, so they are keyed on what the API issues:
+# an import_id, and the SHA-256 of the one-time deletion token (the token itself is never stored).
+
+USER_IMPORTS_TABLE_NAME = "USER_IMPORTS"
+USER_DELETIONS_TABLE_NAME = "USER_DELETIONS"
+IMPORTS_PREFIX = "inbox/imports/"
+DELETIONS_PREFIX = "inbox/deletions/"
+
+
+def ensure_user_imports_table(conn: snowflake.connector.SnowflakeConnection) -> str:
+    """One row per consented import. `record` holds the whole API payload (the films list);
+    typed flattening is dbt's job, as everywhere else in RAW."""
+    ensure_schema(conn, SCHEMA_NAME)
+    qualified_name = _qualified(USER_IMPORTS_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {qualified_name} (
+                    import_id    VARCHAR NOT NULL,
+                    token_hash   VARCHAR NOT NULL,
+                    record       VARIANT NOT NULL,
+                    source_file  VARCHAR,
+                    loaded_at    TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
+                    PRIMARY KEY (import_id)
+                )
+                """
+            )
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to create/verify table {qualified_name}: {exc}.") from exc
+    return qualified_name
+
+
+def ensure_user_deletions_table(conn: snowflake.connector.SnowflakeConnection) -> str:
+    """One row per deletion request. Kept after the data is gone, as a tombstone: it holds only a
+    hash, and it lets dbt exclude an import even if its file were ever re-landed."""
+    ensure_schema(conn, SCHEMA_NAME)
+    qualified_name = _qualified(USER_DELETIONS_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {qualified_name} (
+                    token_hash    VARCHAR NOT NULL,
+                    requested_at  TIMESTAMP_TZ,
+                    source_file   VARCHAR,
+                    loaded_at     TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
+                    PRIMARY KEY (token_hash)
+                )
+                """
+            )
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to create/verify table {qualified_name}: {exc}.") from exc
+    return qualified_name
+
+
+def copy_user_imports(conn: snowflake.connector.SnowflakeConnection) -> int:
+    """COPY the inbox's import files into USER_IMPORTS. COPY skips files it has loaded before, so
+    re-running is a no-op rather than a duplicate. Returns rows loaded."""
+    table = _qualified(USER_IMPORTS_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                COPY INTO {table} (import_id, token_hash, record, source_file)
+                FROM (
+                    SELECT $1:import_id::string, $1:token_hash::string, $1, METADATA$FILENAME
+                    FROM {_stage_ref(IMPORTS_PREFIX)}
+                )
+                FILE_FORMAT = (FORMAT_NAME = {_qualified(FILE_FORMAT_NAME)})
+                """
+            )
+            results = cur.fetchall()
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to COPY into {table}: {exc}.") from exc
+    return _rows_loaded(results)
+
+
+def copy_user_deletions(conn: snowflake.connector.SnowflakeConnection) -> int:
+    """COPY the inbox's deletion requests into USER_DELETIONS. Returns rows loaded."""
+    table = _qualified(USER_DELETIONS_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                COPY INTO {table} (token_hash, requested_at, source_file)
+                FROM (
+                    SELECT $1:token_hash::string, $1:requested_at::timestamp_tz, METADATA$FILENAME
+                    FROM {_stage_ref(DELETIONS_PREFIX)}
+                )
+                FILE_FORMAT = (FORMAT_NAME = {_qualified(FILE_FORMAT_NAME)})
+                """
+            )
+            results = cur.fetchall()
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to COPY into {table}: {exc}.") from exc
+    return _rows_loaded(results)
