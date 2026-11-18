@@ -129,6 +129,8 @@ as their diary lands. See `docs/roadmap.md` for the reasoning and measurements.
 
 ## Serving and frontend
 
+Step-by-step start-up instructions: **[docs/running_locally.md](docs/running_locally.md)**.
+
 Snowflake is the batch side. What a visitor touches never queries it: `just snapshot` exports the
 embeddings and what the app shows (title, year, rating, poster path, franchise, US streaming
 providers) to a versioned, content-hashed snapshot (23.7k titles, ~49 MB of float16 vectors), and

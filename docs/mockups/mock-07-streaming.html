@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlotPoints · 07 Streaming (card deck)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>(function(){var t;try{t=localStorage.getItem('pp-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})();</script>
+<link rel="stylesheet" href="mock-07-shared.css">
+<style>
+.svc{display:flex;flex-wrap:wrap;gap:10px}
+.svc button{display:flex;align-items:center;gap:10px;padding:7px 14px 7px 7px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:600 14px var(--display);cursor:pointer;text-align:left}
+.svc button small{display:block;font:400 11px var(--mono);color:var(--muted)}
+.svc .mono-tile,.mono-tile.s{width:32px;height:32px;font-size:14px;border-radius:9px}
+.svc button[aria-pressed="true"]{border-color:var(--accent-text);background:color-mix(in srgb,var(--accent-text) 12%,var(--surface))}
+.svc button[aria-pressed="true"] small{color:var(--accent-text)}
+.mono-tile.xs{width:20px;height:20px;font-size:10px;border-radius:6px}
+.empty{border:1px dashed var(--border);border-radius:16px;padding:44px 20px;text-align:center;color:var(--muted)}
+.stat{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin:24px 0 14px}.stat h2{font:700 clamp(24px,2.8vw,34px)/1.05 var(--title);letter-spacing:-.01em}.stat span{color:var(--muted);font-size:14px}
+.pills{display:flex;gap:6px;flex-wrap:wrap}.pills button{font:600 13px var(--display);padding:7px 13px;border-radius:999px;border:1px solid var(--border);background:var(--raised);color:var(--text);cursor:pointer}
+.pills button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent-text) 14%,var(--surface));border-color:var(--accent-text);color:var(--accent-text)}
+/* A · tonight picker */
+.tn{display:grid;grid-template-columns:260px 1fr;gap:22px;align-items:start;margin-top:22px}
+.tn aside{padding:18px;display:grid;gap:18px}
+.pick{display:grid;grid-template-columns:230px 1fr;gap:28px;padding:26px;position:relative;overflow:hidden}
+.pick::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 60% 90% at 12% 0,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%);pointer-events:none}
+.pick>*{position:relative}.pick h2{font:700 clamp(32px,4vw,52px)/1 var(--title);letter-spacing:-.02em;margin:8px 0 6px}
+.next{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+.next .fc{flex:none}
+/* B · matrix */
+.mx{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.mx th{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:10px 6px;text-align:center;background:var(--surface);border-bottom:1px solid var(--border)}
+.mx th:first-child,.mx td:first-child{text-align:left;padding-left:16px}
+.mx td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:center}
+.mx tr:hover td{background:var(--raised)}
+.mx .film{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;text-align:left;min-width:260px}.mx .film b{font:600 15px var(--title);display:block}.mx .film small{color:var(--muted)}
+.mx .m{display:grid;grid-template-columns:1fr 40px;gap:8px;align-items:center;min-width:130px}.mx .m span{font:600 12px var(--mono);color:var(--accent-text);text-align:right}
+.mx .d{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--border)}
+.mx .d.has{background:var(--muted)}.mx .d.mine{background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent)}
+.mx th.mine{color:var(--accent-text)}.mx td.mine-col{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.mx .none{color:var(--muted);font-size:12px}
+.tablewrap{overflow-x:auto;padding:0}
+/* C · columns */
+.cols{display:flex;gap:16px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;margin-top:22px}
+.col{flex:0 0 290px;padding:14px}
+.col header{display:flex;align-items:center;gap:10px;margin-bottom:12px}.col header h2{font:700 19px var(--title)}.col header span{margin-left:auto;font:600 12px var(--mono);color:var(--muted)}
+.cc{display:grid;grid-template-columns:54px 1fr;gap:12px;padding:9px;border-radius:12px;border:1px solid var(--border);background:var(--raised);margin-bottom:8px}
+.cc:first-of-type{border-color:var(--accent-text)}
+.cc b{font:600 14px/1.2 var(--title);display:block}.cc small{color:var(--muted);display:block;font-size:12px}.cc .pc{font:600 13px var(--mono);color:var(--accent-text)}
+/* D · deck */
+.deck{display:grid;grid-template-columns:1fr 300px;gap:28px;margin-top:26px;align-items:start}
+.stack{position:relative;height:520px;max-width:760px}
+.card{position:absolute;inset:0;display:grid;grid-template-columns:260px 1fr;gap:26px;padding:24px;transition:transform .35s,opacity .35s;transform-origin:50% 100%}
+.card h2{font:700 38px/1 var(--title);letter-spacing:-.02em;margin:6px 0 4px}
+.card.p1{transform:translateY(14px) scale(.965);opacity:.75}.card.p2{transform:translateY(28px) scale(.93);opacity:.45}
+.card.gone{transform:translateX(120%) rotate(8deg);opacity:0}.card.nope{transform:translateX(-120%) rotate(-8deg);opacity:0}
+.acts{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+.queue{padding:16px;display:grid;gap:10px}
+/* E · overview */
+.ov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:22px}
+.stile{padding:16px;display:grid;gap:12px;cursor:pointer;text-align:left;font:inherit;color:inherit;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.stile[aria-pressed="true"]{border-color:var(--accent-text);box-shadow:0 0 0 1px var(--accent-text)}
+.stile .hd{display:flex;gap:12px;align-items:center}.stile h3{font:700 18px var(--title)}.stile .hd small{display:block;color:var(--muted);font-size:12px}
+.stile .bestm{display:grid;grid-template-columns:50px 1fr;gap:12px;align-items:center}.stile .bestm b{font:600 14px/1.2 var(--title);display:block}.stile .bestm small{color:var(--muted)}
+.stile .nums{display:flex;gap:18px;font-size:12px;color:var(--muted)}.stile .nums b{display:block;font:600 18px var(--mono);color:var(--text)}
+.detail{margin-top:22px}
+@media (max-width:980px){.tn,.deck,.pick{grid-template-columns:1fr}.card{grid-template-columns:130px 1fr}.stack{height:420px}.card h2{font-size:26px}}
+</style></head>
+<body data-page="st">
+<main class="wrap">
+ <div class="pagehead"><p class="eyebrow">What you can watch tonight</p><h1>Streaming</h1>
+  <p>Choose the services you pay for. We rank only what is on them, so your top pick is always something you can press play on.</p></div>
+ <div class="svc" id="svc" role="group" aria-label="Your streaming services"></div>
+ <div><div class="deck"><div><div class="stack" id="stack"></div></div><aside class="panel queue" id="queue"></aside></div></div>
+ <p style="text-align:center;color:var(--muted);font-size:13px;padding-top:26px">Streaming data from JustWatch · United States only · availability as of Nov 16, 2026</p>
+ <div class="legend"><span><i style="background:var(--coral)"></i>Taste match</span><span><i style="background:var(--mint)"></i>Novelty</span><span><i style="background:var(--sky)"></i>Critical reception</span><span>"Overall #N" = rank among all your matches, before the service filter</span></div>
+</main>
+<script src="mock-07-shared.js"></script>
+<script>
+(function(){
+const {$,$$,poster,gauge,dots,ov}=PP;
+const S=[['Netflix','N',355],['Max','M',265],['Prime Video','P',205],['Disney+','D',225],['Hulu','H',140],['Apple TV+','A',0],['Paramount+','P',215],['Peacock','P',45],['Criterion Channel','C',30],['Mubi','M',320],['Tubi','T',15]];
+const sh={};S.forEach(s=>sh[s[0]]=s);
+// title, year, hue, match, overall, services, runtime, director, novelty, critics, genre
+const M=[
+ ['Burning',2018,32,92,1,['Netflix','Criterion Channel'],148,'Lee Chang-dong',61,88,'Mystery'],
+ ['Memories of Murder',2003,20,90,2,['Max','Criterion Channel'],132,'Bong Joon-ho',48,92,'Crime'],
+ ['The Handmaiden',2016,330,88,3,['Prime Video','Mubi'],145,'Park Chan-wook',55,92,'Thriller'],
+ ['Prisoners',2013,210,86,5,['Netflix','Hulu'],153,'Denis Villeneuve',38,82,'Thriller'],
+ ['Nightcrawler',2014,260,83,8,['Netflix','Max'],117,'Dan Gilroy',40,90,'Thriller'],
+ ['Cure',1997,190,82,9,['Criterion Channel','Mubi'],111,'Kiyoshi Kurosawa',72,84,'Horror'],
+ ['Gone Girl',2014,90,81,12,['Max','Hulu'],149,'David Fincher',35,86,'Thriller'],
+ ['Zodiac',2007,60,80,14,['Max','Paramount+'],157,'David Fincher',42,89,'Crime'],
+ ['Sicario',2015,15,79,16,['Netflix','Prime Video'],121,'Denis Villeneuve',33,87,'Crime'],
+ ['Mother',2009,280,78,19,['Max','Mubi'],129,'Bong Joon-ho',60,87,'Mystery'],
+ ['Decision to Leave',2022,170,77,21,['Mubi','Prime Video'],138,'Park Chan-wook',58,88,'Mystery'],
+ ['Se7en',1995,40,76,24,['Netflix','Max'],127,'David Fincher',30,91,'Crime'],
+ ['Whiplash',2014,45,75,27,['Netflix'],107,'Damien Chazelle',28,93,'Drama'],
+ ['Hunt for the Wilderpeople',2016,120,72,31,['Hulu','Max'],101,'Taika Waititi',66,85,'Comedy'],
+ ['Moon',2009,240,71,36,['Prime Video'],97,'Duncan Jones',70,84,'Sci-fi'],
+ ['Arrival',2016,200,70,40,['Paramount+','Netflix'],116,'Denis Villeneuve',44,88,'Sci-fi']
+];
+S.forEach(s=>s.push(M.filter(m=>m[5].includes(s[0])).length));
+let chosen=['Netflix','Max'],rt='any',gn=new Set(),skip=0,deckIdx=0,openSvc=null;
+const tile=(n,c)=>'<span class="mono-tile '+(c||'')+'" style="--h:'+sh[n][2]+(n==='Apple TV+'?';background:linear-gradient(145deg,#444,#111)':'')+'" title="'+n+'">'+sh[n][1]+'</span>';
+const join=a=>a.length<3?a.join(' and '):a.slice(0,-1).join(', ')+' and '+a.slice(-1);
+const base=()=>chosen.length?M.filter(m=>m[5].some(s=>chosen.includes(s))):[];
+const mine=m=>m[5].filter(s=>chosen.includes(s));
+function svcBar(){$('#svc').innerHTML=S.map(s=>'<button type="button" aria-pressed="'+chosen.includes(s[0])+'" data-s="'+s[0]+'">'+tile(s[0])+'<span>'+s[0]+'<small>'+s[3]+' matches</small></span></button>').join('')}
+const emptyMsg='<div class="empty">Pick a service above to see your best matches on it.</div>';
+/* Deck */
+function renderD(){
+ const r=base();
+ if(!chosen.length){$('#stack').outerHTML='<div class="stack" id="stack">'+emptyMsg+'</div>';$('#queue').innerHTML='';return}
+ if(deckIdx>=r.length){$('#stack').innerHTML='<div class="empty">That is everything on your services. <button class="btn secondary" type="button" data-reset>Start over</button></div>';$('#queue').innerHTML='';return}
+ const cards=r.slice(deckIdx,deckIdx+3);
+ $('#stack').innerHTML=cards.map((m,i)=>'<article class="panel card p'+i+'" style="z-index:'+(3-i)+'"><div class="pw">'+poster(m[0],m[2])+'</div><div><p class="eyebrow">'+(deckIdx+i+1)+' of '+r.length+' · '+mine(m).join(' · ')+'</p><h2>'+m[0]+'</h2><p style="color:var(--muted)">'+m[1]+' · '+m[7]+' · '+m[6]+' min</p><div style="margin:14px 0">'+gauge(m[3])+'</div><div class="sig"><span class="s1">Taste <b>'+m[3]+'</b></span><span class="s2">Novelty <b>'+m[8]+'</b></span><span class="s3">Critics <b>'+m[9]+'</b></span></div>'+(i===0?'<div class="acts"><button class="btn primary lg" type="button" data-deck="go">▶ Watch</button><button class="btn secondary lg" type="button" data-deck="save">+ Save for later</button><button class="btn ghost" type="button" data-deck="no">Not tonight</button></div>':'')+'</div></article>').join('');
+ $('#queue').innerHTML='<p class="label">Up next</p>'+r.slice(deckIdx+1,deckIdx+6).map(m=>'<div class="cc">'+poster(m[0],m[2],'sm')+'<div><b>'+m[0]+'</b><small>'+m[1]+'</small><span class="pc">'+m[3]+'%</span></div></div>').join('')}
+function all(){svcBar();renderD()}
+document.addEventListener('click',e=>{
+ const s=e.target.closest('[data-s]');if(s){const n=s.dataset.s;chosen=chosen.includes(n)?chosen.filter(x=>x!==n):[...chosen,n];skip=0;deckIdx=0;return all()}
+ const d=e.target.closest('[data-deck]');if(d){const el=$('.card.p0');el.classList.add(d.dataset.deck==='no'?'nope':'gone');return setTimeout(()=>{deckIdx++;renderD()},320)}
+ if(e.target.closest('[data-reset]')){deckIdx=0;return renderD()}
+});
+all();
+})();
+</script>
+</body></html>

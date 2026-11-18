@@ -203,6 +203,33 @@ pool makes the rate limit hold across everything Airflow schedules.
 4. **Posters.** The app uses the chosen title-on-color tiles; real images come from TMDB's image CDN
    and carry the same attribution requirement.
 
+### Where we are (2026-11-18)
+
+Phases 0-8 are built and run locally end to end; **nothing is deployed**. The stage is *Phase 9:
+redesign, posters and monetisation, then deploy*.
+
+- **UI redesign in progress.** `web/` is the v0 (title-on-color tiles). Six alternative directions
+  are mocked in `docs/mockups/` (constellation, projector noir, ticket stub, modernist poster, slate
+  dots, red carpet); one has to be chosen and ported before the frontend is called done.
+- **Ad rails (placeholder).** `Shell.tsx` reserves a 160x600 sticky slot either side of the 1200px
+  column, shown only at >=1600px so narrower screens never reflow. Each holds a "please disable your
+  adblocker so we can keep PlotPoints free for all" card standing in for the ad tag. No network is
+  chosen. Open questions: pick one (AdSense needs an approved, deployed domain, so this cannot be
+  finished before deploy), mobile placement (rails vanish below 1600px, so phones and laptops see no
+  ads and earn nothing), and real adblock detection instead of always showing the card.
+- **Posters.** Snapshot already carries `poster_path`, but the catalog's lean payload has no
+  `images` append, so there is only TMDB's single default poster per title, not a US-language one.
+  US posters means adding `images` with `include_image_language=en,null` to the catalog append set
+  and choosing the top English poster in dbt. That re-enriches ~23.7k titles (~2.5 h, as before) or
+  a targeted backfill of `/images` alone. Needs a decision, and TMDB's attribution requirement
+  applies to the images.
+- **Licensing conflict to resolve before ads.** Decision 8 notes TMDB's free tier is non-commercial
+  and a project whose primary purpose is revenue needs a license. Ads put PlotPoints on the wrong
+  side of that; get the commercial terms (or an alternative image/metadata source) settled before
+  any ad network goes live.
+- **Still outstanding** from the list above: IAM changes and a real inbox round trip, host choice,
+  TMDB logo, and verifying the export import on a real Letterboxd zip.
+
 ### Where the data actually stands
 
 The catalog is **23,747 titles** (23,746 from the 2026-11-16 `catalog_ingest` run, floor 100, plus one

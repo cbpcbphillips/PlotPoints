@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlotPoints · 07 For you (Constellation look + Noir results + Slate details)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>(function(){var t;try{t=localStorage.getItem('pp-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})();</script>
+<link rel="stylesheet" href="mock-07-shared.css">
+<style>
+/* hero: 02 letterbox, 01 colours */
+main{padding-top:26px}
+.hero{position:relative}
+.hero::before{content:"";position:absolute;inset:-20px -6% auto -6%;height:520px;pointer-events:none;background:radial-gradient(ellipse 55% 100% at 20% 0,color-mix(in srgb,var(--accent) 55%,transparent),transparent 70%);opacity:var(--beam)}
+.lb{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--border)}
+.lb-bar{height:clamp(12px,2vw,26px);background:#000}
+.backdrop{aspect-ratio:2.39/1;position:relative;background:linear-gradient(105deg,#0B0D17,color-mix(in srgb,var(--pt-lo) 45%,#0B0D17) 45%,color-mix(in srgb,var(--accent) 30%,#1a0d00));display:flex;align-items:flex-start;justify-content:space-between;padding:14px 20px}
+:root[data-theme="dark"] .backdrop{background:linear-gradient(105deg,color-mix(in srgb,var(--accent) 62%,#1a0d00),color-mix(in srgb,var(--accent) 34%,#0B0D17) 45%,#0B0D17)}
+.backdrop::before{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.5),transparent 55%)}
+.backdrop svg{position:absolute;inset:0;width:100%;height:100%;opacity:.4}
+.backdrop span{position:relative;font:600 11px var(--mono);letter-spacing:.3em;color:#ECEAF4}
+.hero-body{display:grid;grid-template-columns:210px 1fr;gap:32px;position:relative;margin-top:-84px;padding:0 26px}
+.hero-body .txt{padding-top:98px}
+.hero h1{font:700 clamp(40px,5.4vw,68px)/.98 var(--title);letter-spacing:-.02em;margin:8px 0 10px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--muted);font-size:14px}
+.syn{max-width:60ch;color:var(--muted);margin:14px 0}
+.hero .sig{margin:14px 0}.hero .gauge{margin:2px 0 12px}
+.rank{font:600 10px var(--mono);letter-spacing:.08em;color:var(--muted)}
+.avail{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;font-size:13px;color:var(--muted)}
+.avail .chip{border-color:var(--mint)}
+/* why + wildcard */
+.two{display:grid;grid-template-columns:1.6fr 1fr;gap:18px;margin-top:26px}
+.why-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.reasons{display:grid;gap:16px;counter-reset:r;margin-top:16px}
+.reasons li{display:grid;grid-template-columns:32px 1fr;gap:12px;counter-increment:r}
+.reasons li::before{content:counter(r);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1px solid var(--accent-text);color:var(--accent-text);font:700 13px var(--mono)}
+.reasons p{color:var(--muted);font-size:14px}.reasons b{color:var(--text)}
+.reasons .award{display:block;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text);margin-bottom:2px}
+.reasons .sim{font:600 12px var(--mono);color:var(--accent-text);margin-left:6px}
+.tag{display:inline-block;font:700 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--coral);color:var(--coral);padding:3px 8px;border-radius:4px;margin-bottom:12px}
+.sp{display:grid;grid-template-columns:92px 1fr;gap:16px;margin-top:10px}.sp p{color:var(--muted);font-size:13px;margin-top:6px}
+.fc .dots{margin-top:2px}
+@media (max-width:980px){.two{grid-template-columns:1fr}}
+@media (max-width:720px){.hero-body{grid-template-columns:120px 1fr;gap:16px;padding:0 8px;margin-top:-44px}.hero-body .txt{padding-top:52px}.hero h1{font-size:34px}}
+@media (max-width:480px){.hero-body{grid-template-columns:1fr}.hero-body .pwrap{max-width:140px}.hero-body .txt{padding-top:0}}
+</style></head>
+<body data-page="for">
+<main class="wrap">
+  <section class="hero" aria-labelledby="pick">
+   <div class="lb"><div class="lb-bar"></div><div class="backdrop" role="img" aria-label="Placeholder backdrop">
+     <svg viewBox="0 0 800 335" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="#8FA0FF"><circle cx="90" cy="70" r="3"/><circle cx="210" cy="140" r="4"/><circle cx="330" cy="60" r="3"/><circle cx="420" cy="190" r="5"/><circle cx="520" cy="95" r="3"/><circle cx="640" cy="160" r="4"/><circle cx="730" cy="60" r="3"/><circle cx="150" cy="250" r="3"/><circle cx="560" cy="270" r="4"/></g><g stroke="#F5B84B" stroke-opacity=".4" fill="none"><path d="M90 70L210 140M210 140L420 190M420 190L640 160M330 60L420 190M420 190L560 270"/></g><circle cx="640" cy="160" r="10" fill="#F5B84B"/><circle cx="640" cy="160" r="17" fill="none" stroke="#F5B84B"/></svg>
+     <span>NOW SHOWING</span><span>YOUR NEAREST POINT IN TASTE SPACE</span></div><div class="lb-bar"></div></div>
+   <div class="hero-body"><div class="pwrap"><div class="poster" style="--h:32" role="img" aria-label="Placeholder poster for Burning"><span>Burning</span></div></div>
+    <div class="txt"><p class="eyebrow">Recommended · tonight</p><h1 id="pick">Burning</h1>
+     <p class="meta"><span>2018</span><span>Dir. Lee Chang-dong</span><span>148 min</span><span class="rank">OVERALL RANK 1</span></p>
+     <div class="chips" style="margin-top:12px"><span class="chip">Drama</span><span class="chip">Mystery</span><span class="chip">Thriller</span></div>
+     <p class="syn">A young courier reconnects with a childhood neighbour, who returns from a trip abroad with a wealthy, enigmatic friend. A slow, humid dread settles in as one confession after another refuses to add up.</p>
+     <div class="gauge"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="22"/><circle class="val" cx="24" cy="24" r="22" stroke-dasharray="127.1 138.2"/></svg><div><b>92%</b><small>match with the films that explain it</small></div></div>
+     <div class="sig" aria-label="Signals"><span class="s1">Taste match <b>92</b></span><span class="s2">Novelty <b>61</b></span><span class="s3">Critical reception <b>88</b></span></div>
+     <div class="chips"><button class="btn primary" type="button">+ Add to watchlist</button><button class="btn secondary" type="button">Seen it</button><button class="btn ghost" type="button">Not interested</button></div>
+     <p class="avail"><span class="label">Streaming (US)</span><span class="chip">Netflix</span><span class="chip">Max</span><span>as of Nov 16 · via JustWatch</span></p>
+    </div></div>
+  </section>
+
+  <div class="two">
+   <section class="panel" aria-labelledby="why"><div class="why-head"><h2 id="why">Why this pick</h2><span class="label">3 films you liked</span></div>
+    <ol class="reasons">
+     <li><div><span class="award">Closest match</span><p>You rated <b>Memories of Murder</b> <span class="stars" role="img" aria-label="5 out of 5">★★★★★</span><span class="sim">78% similar</span><br>Another slow-burn mystery that withholds a tidy answer.</p></div></li>
+     <li><div><span class="award">Same director</span><p>You rated <b>Poetry</b> <span class="stars" role="img" aria-label="5 out of 5">★★★★★</span><span class="sim">71% similar</span><br>Lee Chang-dong again, and the same patient, quietly devastating tone.</p></div></li>
+     <li><div><span class="award">Surprising overlap</span><p>You rated <b>Zodiac</b> <span class="stars" role="img" aria-label="4 out of 5">★★★★<span class="off">★</span></span><span class="sim">64% similar</span><br>Echoes its obsessive uncertainty, but is more ambiguous than your usual thrillers.</p></div></li>
+    </ol></section>
+   <aside class="panel"><span class="tag">Late-night wildcard</span><h2>An outlier worth a look</h2>
+    <div class="sp"><div class="poster" style="--h:12" role="img" aria-label="Placeholder poster for Paddington 2"><span>Paddington 2</span></div><div><b style="font-family:var(--title)">Paddington 2</b><div class="meta"><span>2017</span><span>Dir. Paul King</span></div><p>Far outside your usual cluster, but loved by viewers who rate precision-built, humane films as highly as you do.</p></div></div></aside>
+  </div>
+
+  <h2 class="sec">Because you rated <em>highly</em></h2><div class="row" id="because"></div>
+  <h2 class="sec">The reel · more like this</h2><div class="row" id="reel"></div>
+  <div class="legend" aria-label="Dot legend"><span><i style="background:var(--coral)"></i>Taste match</span><span><i style="background:var(--mint)"></i>Novelty</span><span><i style="background:var(--sky)"></i>Critical reception</span><span>Dot opacity = strength · hover a poster for actions</span></div>
+</main>
+<script src="mock-07-shared.js"></script>
+<script>
+(function(){
+const {$,poster,stars,dots,ov}=PP;
+const because=[['Memories of Murder',2003,20,5],['Poetry',2010,200,5],['Parasite',2019,150,4.5],['Oldboy',2003,350,4.5],['Zodiac',2007,60,4],['Mother',2009,280,4]];
+const reel=[['The Handmaiden',2016,330,88,55,92],['Cure',1997,190,85,72,84],['Nightcrawler',2014,260,83,40,90],['Gone Girl',2014,90,81,35,86],['The Wailing',2016,120,80,66,78],['Prisoners',2013,210,79,38,82],['Decision to Leave',2022,170,77,58,88]];
+$('#because').innerHTML=because.map(f=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+'</small>'+stars(f[3])+'</figcaption></figure>').join('');
+$('#reel').innerHTML=reel.map((f,i)=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+ov+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+' · #'+(i+2)+' overall</small>'+dots(f[3],f[4],f[5])+'</figcaption></figure>').join('');
+})();
+</script>
+</body></html>
