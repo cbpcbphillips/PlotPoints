@@ -7,7 +7,7 @@ export function FilmCard({ r }: { r: Result }) {
   return (
     <figure className="fc m-0">
       <div className="pw">
-        <Poster id={r.tmdb_id} title={r.title} />
+        <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
       </div>
       <figcaption>
         <b>

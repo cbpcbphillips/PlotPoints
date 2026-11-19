@@ -298,3 +298,48 @@ def copy_user_deletions(conn: snowflake.connector.SnowflakeConnection) -> int:
         except snowflake.connector.errors.ProgrammingError as exc:
             raise RuntimeError(f"Failed to COPY into {table}: {exc}.") from exc
     return _rows_loaded(results)
+
+
+# --- Wanted titles: films an import contained that the catalog lacked -----------------------------
+# Written by the API with no user attached (ids only), so they need no consent. user_ingest enriches
+# them; scoring keeps anything under the catalog floor out of the recommendations.
+
+WANTED_TITLES_TABLE_NAME = "WANTED_TITLES"
+WANTED_PREFIX = "inbox/titles/"
+
+
+def ensure_wanted_titles_table(conn: snowflake.connector.SnowflakeConnection) -> str:
+    ensure_schema(conn, SCHEMA_NAME)
+    qualified_name = _qualified(WANTED_TITLES_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {qualified_name} (
+                    record       VARIANT NOT NULL,
+                    source_file  VARCHAR,
+                    loaded_at    TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP()
+                )
+                """
+            )
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to create/verify table {qualified_name}: {exc}.") from exc
+    return qualified_name
+
+
+def copy_wanted_titles(conn: snowflake.connector.SnowflakeConnection) -> int:
+    """COPY the inbox's wanted-title files into WANTED_TITLES. Returns rows loaded."""
+    table = _qualified(WANTED_TITLES_TABLE_NAME)
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"""
+                COPY INTO {table} (record, source_file)
+                FROM (SELECT $1, METADATA$FILENAME FROM {_stage_ref(WANTED_PREFIX)})
+                FILE_FORMAT = (FORMAT_NAME = {_qualified(FILE_FORMAT_NAME)})
+                """
+            )
+            results = cur.fetchall()
+        except snowflake.connector.errors.ProgrammingError as exc:
+            raise RuntimeError(f"Failed to COPY into {table}: {exc}.") from exc
+    return _rows_loaded(results)

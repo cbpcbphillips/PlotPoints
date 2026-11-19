@@ -65,6 +65,14 @@ class Inbox:
         self._put(f"inbox/imports/{import_id}.json", record)
         return {"import_id": import_id, "token": token}
 
+    def store_wanted(self, titles: list[tuple[str, int]]) -> None:
+        """Films an import contained that the catalog lacks: ids only, never who asked."""
+        record = {
+            "requested_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "titles": [{"media_type": mt, "tmdb_id": int(tid)} for mt, tid in titles],
+        }
+        self._put(f"inbox/titles/{uuid.uuid4().hex}.json", record)
+
     def request_deletion(self, token: str) -> None:
         h = token_hash(token)
         record = {"token_hash": h, "requested_at": datetime.now(UTC).isoformat(timespec="seconds")}

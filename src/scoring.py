@@ -39,6 +39,10 @@ QUALITY_POWER = 2.0  # how steeply being below the member's own standard is disc
 # full catalog recommended an 18-minute short of Whiplash and a 23-minute Interstellar
 # documentary. Shorts you HAVE watched still count as taste signal. 60 keeps Dumbo (64 min).
 MIN_RUNTIME_MINUTES = 60
+# Candidates only, again: the catalog is fetched at 100 votes, but titles a user imported that the
+# catalog lacked are enriched too (user_ingest), so their taste counts. Those can sit at 5 or 8
+# votes and must never be *recommended*: they shape a profile as seeds and nothing more.
+CANDIDATE_MIN_VOTES = 100
 
 _CHUNK = 256  # seed films scored per pass; bounds memory for very large histories
 
@@ -94,6 +98,16 @@ def _split(profiles: Profile) -> list[_Member]:
             )
         )
     return members
+
+
+def _candidates(snap: Snapshot, profiles: Profile, min_runtime: int, min_votes: int) -> np.ndarray:
+    """Rows that may be recommended: unwatched by anyone, feature length, enough votes."""
+    watched = np.zeros(len(snap), dtype=bool)
+    for films in profiles.values():
+        for idx, _ in films:
+            watched[idx] = True
+    long_enough = np.isnan(snap.runtime) | (snap.runtime >= min_runtime)
+    return np.flatnonzero(~watched & long_enough & (snap.votes >= min_votes))
 
 
 def _z_pass(sims: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -196,6 +210,7 @@ def rank(
     top_n: int = TOP_N,
     quality_power: float = QUALITY_POWER,
     min_runtime: int = MIN_RUNTIME_MINUTES,
+    min_votes: int = CANDIDATE_MIN_VOTES,
     allow: np.ndarray | None = None,
 ) -> list[dict]:
     """Rank unwatched titles for one profile or a group (least-misery). Mirrors SCORE_SQL.
@@ -205,13 +220,7 @@ def rank(
     title scores: restricting the pool first would shift every z-score.
     """
     members = _split(profiles)
-    watched = np.zeros(len(snap), dtype=bool)
-    for films in profiles.values():
-        for idx, _ in films:
-            watched[idx] = True
-
-    ok = ~watched & (np.isnan(snap.runtime) | (snap.runtime >= min_runtime))
-    cand = np.flatnonzero(ok)
+    cand = _candidates(snap, profiles, min_runtime, min_votes)
     q = quality_array(snap)
     per_member = [
         _member_scores(snap, cand, m, q, dislike_weight, top_n, quality_power) for m in members
@@ -265,6 +274,7 @@ def influence(
     member: str | None = None,
     top_n: int = 6,
     min_runtime: int = MIN_RUNTIME_MINUTES,
+    min_votes: int = CANDIDATE_MIN_VOTES,
 ) -> list[dict]:
     """Which liked films best explain a set of picks, strongest first.
 
@@ -279,11 +289,7 @@ def influence(
     """
     members = _split(profiles)
     m = next((x for x in members if x.name == member), members[0])
-    watched = np.zeros(len(snap), dtype=bool)
-    for films in profiles.values():
-        for idx, _ in films:
-            watched[idx] = True
-    cand = np.flatnonzero(~watched & (np.isnan(snap.runtime) | (snap.runtime >= min_runtime)))
+    cand = _candidates(snap, profiles, min_runtime, min_votes)
     where = {int(i): k for k, i in enumerate(cand)}
     rows = [where[p] for p in picks if p in where]
     if not rows:

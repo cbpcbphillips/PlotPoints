@@ -31,11 +31,14 @@ from api.schemas import (
     ProfileRequest,
     RecommendRequest,
 )
+from api.tmdb_lookup import TmdbLookup
 
 MAX_POOL = 400  # offset + limit; deeper than this is not a recommendation list any more
 FRANCHISE_POOL = 300  # how far down the ranking franchises are gathered from
 FRANCHISES_SHOWN = 5  # the page shows a person's top five series, not every one
 FILMS_PER_FRANCHISE = 8  # unseen films kept per series: its best plus the next seven
+LOOKUP_CAP = 200  # TMDB lookups per import; the rest are reported as unmatched
+WANTED_CAP = 200  # missing-title ids written to the inbox per request
 INFLUENCE_PICKS = 20  # the top picks the "because you enjoyed" row is measured against
 MAX_PROVIDERS_LISTED = 60
 
@@ -65,13 +68,18 @@ def snapshot_dir() -> Path:
     return root / (root / "LATEST").read_text(encoding="utf-8").strip()
 
 
-def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None) -> FastAPI:
+def create_app(
+    snap: snapshot.Snapshot | None = None,
+    inbox: Inbox | None = None,
+    lookup: TmdbLookup | None = None,
+) -> FastAPI:
     limiter = RateLimiter()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.snap = snap or snapshot.load(snapshot_dir())
         app.state.inbox = inbox or Inbox()
+        app.state.lookup = lookup or TmdbLookup()
         s: snapshot.Snapshot = app.state.snap
         counts: dict[int, int] = defaultdict(int)
         for ps in s.providers:
@@ -150,6 +158,7 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
             "tmdb_rating": None if np.isnan(s.rating[i]) else round(float(s.rating[i]), 1),
             "runtime": None if np.isnan(s.runtime[i]) else int(s.runtime[i]),
             "poster_path": s.poster[i],
+            "backdrop_path": s.backdrop[i],
             "franchise": s.franchise[i],
             "genres": s.genres[i],
             "providers": [s.provider_names[p] for p in s.providers[i]],
@@ -244,6 +253,9 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
         films = collapse(entries)
         for f in films:
             f["in_catalog"] = (f["media_type"], f["tmdb_id"]) in s.by_tmdb
+        record_wanted(
+            request, [f for f in films if not f["in_catalog"] and f["media_type"] == "movie"]
+        )
         return {
             "username": body.username,
             "entries": len(entries),
@@ -251,9 +263,79 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
             "note": "Letterboxd only returns the latest ~50 entries; an export has everything.",
         }
 
+    def record_wanted(request: Request, films: list[dict]) -> None:
+        """Note films the catalog lacks so the next pipeline run can enrich them as taste signal.
+
+        Only (media_type, tmdb_id) pairs are written: no user, rating or username, so this needs
+        no consent. Best effort: a rate limit or a storage error never fails the import.
+        """
+        ids = {(f["media_type"], int(f["tmdb_id"])) for f in films if f.get("tmdb_id")}
+        if not ids:
+            return
+        try:
+            limiter.check(client_of(request), "wanted", limit=20)
+            request.app.state.inbox.store_wanted(sorted(ids)[:WANTED_CAP])
+        except Exception:  # noqa: BLE001 - deliberately best effort
+            pass
+
     @app.post("/match")
     def match(body: MatchRequest, request: Request):
-        return match_rows(request.app.state.snap, [r.model_dump() for r in body.rows])
+        s = request.app.state.snap
+        res = match_rows(s, [r.model_dump() for r in body.rows])
+        films, rest = res["films"], res["unmatched"]
+        have = {f["tmdb_id"] for f in films}
+        missing, tv, still = [], [], []
+        lookup: TmdbLookup = request.app.state.lookup
+        skipped = 0
+        if lookup.enabled and rest:
+            limiter.check(client_of(request), "lookup", limit=20)
+            todo, later = rest[:LOOKUP_CAP], rest[LOOKUP_CAP:]
+            skipped = len(later)
+            for row, hit in zip(todo, lookup.resolve(todo), strict=True):
+                if hit["kind"] == "tv":
+                    tv.append({"title": row["title"], "year": row["year"]})
+                elif hit["kind"] != "movie":
+                    still.append(row)
+                elif (i := s.by_tmdb.get(("movie", hit["tmdb_id"]))) is not None:
+                    if hit["tmdb_id"] not in have:  # TMDB knew it under another title or year
+                        have.add(hit["tmdb_id"])
+                        films.append(
+                            {
+                                "tmdb_id": hit["tmdb_id"],
+                                "media_type": "movie",
+                                "title": s.title[i],
+                                "year": int(s.year[i]) or None,
+                                "rating": row["rating"],
+                                "rewatch": row["rewatch"],
+                                "ambiguous": False,
+                                "method": "tmdb",
+                            }
+                        )
+                elif hit["tmdb_id"] not in have:  # a real film the catalog does not hold yet
+                    have.add(hit["tmdb_id"])
+                    missing.append(
+                        {
+                            "tmdb_id": hit["tmdb_id"],
+                            "media_type": "movie",
+                            "title": row["title"],
+                            "year": row["year"],
+                            "tmdb_title": hit["title"],
+                            "tmdb_year": hit["year"],
+                            "votes": hit["votes"],
+                            "rating": row["rating"],
+                            "rewatch": row["rewatch"],
+                        }
+                    )
+            rest = still + later
+        record_wanted(request, missing)
+        return {
+            "films": films,
+            "missing": missing,
+            "tv": tv,
+            "unmatched": [{"title": r["title"], "year": r["year"]} for r in rest],
+            "ambiguous": res["ambiguous"],
+            "lookups_skipped": skipped,
+        }
 
     @app.post("/recommend")
     def recommend(body: RecommendRequest, request: Request):

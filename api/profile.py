@@ -61,6 +61,9 @@ def profile_stats(s: snapshot.Snapshot, films: list[dict]) -> dict:
         "average_tmdb": round(sum(tmdb) / len(tmdb), 1) if tmdb else None,
         "top_series": {"name": top_series[0][0], "count": top_series[0][1]} if top_series else None,
         "five_star": [s.title[i] for i, f in rows if f.get("rating") == 5],
+        "missing_ids": sorted(
+            {int(f["tmdb_id"]) for f in films} - {int(f["tmdb_id"]) for _, f in rows}
+        ),
         "newest": max(years) if years else None,
         "oldest": min(years) if years else None,
     }

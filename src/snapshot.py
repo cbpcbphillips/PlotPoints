@@ -48,11 +48,19 @@ class Snapshot:
     genres: list[list[str]]
     providers: list[list[int]]  # per title: indices into provider_names
     provider_names: list[str]  # normalized groups, most-available first
+    # Added after the first snapshots shipped; older snapshots load with these all None.
+    original_title: list[str | None] = field(default_factory=list)
+    backdrop: list[str | None] = field(default_factory=list)
     by_key: dict[str, int] = field(default_factory=dict)
     by_tmdb: dict[tuple[str, int], int] = field(default_factory=dict)
     by_title_year: dict[tuple[str, int], list[int]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        n = len(self.media_key)
+        if len(self.original_title) != n:
+            self.original_title = [None] * n
+        if len(self.backdrop) != n:
+            self.backdrop = [None] * n
         self.by_key = {k: i for i, k in enumerate(self.media_key)}
         self.by_tmdb = {
             (t, int(i)): n
@@ -146,4 +154,6 @@ def load(directory: Path) -> Snapshot:
         genres=cat["genres"],
         providers=cat["providers"],
         provider_names=cat["provider_names"],
+        original_title=cat.get("original_title") or [],
+        backdrop=cat.get("backdrop") or [],
     )

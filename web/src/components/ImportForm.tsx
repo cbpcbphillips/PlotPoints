@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { combineExport, readExportFiles } from '../lib/export'
+import { fromFeed, fromMatch, mergeMissing, type ImportOutcome } from '../lib/importing'
 import { useProfile, type Profile } from '../lib/profile'
 import type { Film } from '../lib/types'
 
@@ -45,32 +46,17 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
     }
     setBusy(true)
     try {
-      let films: Film[]
-      let unmatched = 0
+      let outcome: ImportOutcome
       let source: Profile['source']
       if (files.length) {
-        const rows = combineExport(await readExportFiles(files))
-        const matched = await api.match(rows)
-        films = matched.films.map((f) => ({
-          tmdb_id: f.tmdb_id,
-          media_type: f.media_type,
-          rating: f.rating,
-          rewatch: f.rewatch,
-        }))
-        unmatched = matched.unmatched.length
+        outcome = fromMatch(await api.match(combineExport(await readExportFiles(files))))
         source = 'export'
       } else {
-        const imported = await api.importLetterboxd(name)
-        films = imported.films.map((f) => ({
-          tmdb_id: f.tmdb_id,
-          media_type: f.media_type,
-          rating: f.rating,
-          rewatch: f.rewatch,
-        }))
-        unmatched = imported.films.filter((f) => !f.in_catalog).length
+        outcome = fromFeed((await api.importLetterboxd(name)).films)
         source = 'username'
       }
-      if (!films.length) throw new Error('No films found in that import.')
+      const films: Film[] = outcome.films
+      if (!films.length && !outcome.missing.length) throw new Error('No films found in that import.')
 
       let merged = films
       if (adding && profile) {
@@ -78,6 +64,8 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
         for (const f of films) byId.set(f.tmdb_id, f)
         merged = [...byId.values()]
       }
+      const missing = adding && profile ? mergeMissing(profile.missing ?? [], outcome.missing) : outcome.missing
+      const notYet = new Set(missing.filter((m) => m.tmdb_id != null).map((m) => m.tmdb_id))
 
       let consentedAt = adding ? profile?.consentedAt : undefined
       let deletionToken = adding ? profile?.deletionToken : undefined
@@ -97,11 +85,12 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
         source: adding && profile ? profile.source : source,
         username: source === 'username' ? name : profile?.username,
         importedAt: new Date().toISOString(),
-        matched: merged.length,
-        unmatched: (adding && profile ? profile.unmatched : 0) + unmatched,
+        matched: merged.filter((f) => !notYet.has(f.tmdb_id)).length,
+        unmatched: missing.length,
         consentedAt,
         deletionToken,
         notForMe: adding && profile ? profile.notForMe : [],
+        missing,
       })
       navigate('/for-you')
     } catch (err) {

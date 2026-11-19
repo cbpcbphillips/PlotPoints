@@ -15,6 +15,7 @@ const film = (id: number, score: number, over: Partial<Result> = {}): Result => 
   tmdb_rating: 7,
   runtime: 100,
   poster_path: null,
+  backdrop_path: null,
   franchise: null,
   genres: [],
   providers: [],

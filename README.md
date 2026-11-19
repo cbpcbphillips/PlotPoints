@@ -15,13 +15,14 @@ for one viewer, or a group ("what should we watch together?").
 | Enrich diary | Match each entry to TMDB (movie/TV), full payload | `just enrich` |
 | Fetch catalog | Discover a broad TMDB movie catalog (candidate pool) | `just catalog-fetch` |
 | Enrich catalog | Lean, English-only TMDB payload for catalog titles | `just catalog-enrich` |
-| Load | NDJSON → S3 → `COPY` into `RAW.*` | `just load <diary\|catalog>` |
+| Load | NDJSON → S3 → `COPY` into `RAW.*` | `just load <diary\|catalog\|user_titles>` |
 | Transform (dbt) | Star schema: `dim_media` / `dim_person` / … | `just dbt build` |
 | Vectorize (Cortex) | Embedding document → `VECTOR` in `MART.MEDIA_EMBEDDINGS` | `just dbt build` |
 | Search | Semantic lookup over the embedded catalog | `just search "..."` |
 | Recommend | Weighted-film taste profile → ranked unwatched titles, single or group | `just recommend <user> [user2 …]` |
 
-See **[docs/roadmap.md](docs/roadmap.md)** for the full architecture and phase plan.
+See **[docs/pipeline.md](docs/pipeline.md)** for how to run it (fill, refresh, missing user titles,
+diary, snapshot) and **[docs/roadmap.md](docs/roadmap.md)** for the full architecture and phase plan.
 
 ## Project layout
 
@@ -129,7 +130,8 @@ as their diary lands. See `docs/roadmap.md` for the reasoning and measurements.
 
 ## Serving and frontend
 
-Step-by-step start-up instructions: **[docs/running_locally.md](docs/running_locally.md)**.
+Step-by-step start-up instructions: **[docs/frontend.md](docs/frontend.md)**. Getting data into
+the snapshot (fill, refresh, missing user titles): **[docs/pipeline.md](docs/pipeline.md)**.
 
 Snowflake is the batch side. What a visitor touches never queries it: `just snapshot` exports the
 embeddings and what the app shows (title, year, rating, poster path, franchise, US streaming

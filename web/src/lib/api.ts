@@ -3,7 +3,7 @@ import type {
   Film,
   FranchiseGroup,
   ImportedFilm,
-  MatchedFilm,
+  MatchResponse,
   Meta,
   ProfileStats,
   RecommendResponse,
@@ -62,11 +62,7 @@ export const api = {
       username,
     }),
   match: (rows: CsvRow[]) =>
-    post<{
-      films: MatchedFilm[]
-      unmatched: { title: string; year: number | null }[]
-      ambiguous: number
-    }>('/match', { rows }),
+    post<MatchResponse>('/match', { rows }),
   recommend: (body: RecommendBody) => post<RecommendResponse>('/recommend', body),
   profile: (films: Film[]) => post<ProfileStats>('/profile', { films }),
   franchises: (body: RecommendBody) =>

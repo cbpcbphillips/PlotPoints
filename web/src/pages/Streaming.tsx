@@ -168,7 +168,7 @@ function StreamingFor({ profile }: { profile: Profile }) {
                   style={{ zIndex: 3 - i }}
                 >
                   <div className="pw">
-                    <Poster id={r.tmdb_id} title={r.title} />
+                    <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
                   </div>
                   <div>
                     <p className="eyebrow m-0">
@@ -215,7 +215,7 @@ function StreamingFor({ profile }: { profile: Profile }) {
             <p className="label m-0">Up next</p>
             {picks.slice(skipped + 1, skipped + 6).map(({ r }) => (
               <div key={r.media_key} className="cc">
-                <Poster id={r.tmdb_id} title={r.title} small />
+                <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} small />
                 <div>
                   <b>{r.title}</b>
                   <small>{r.year}</small>

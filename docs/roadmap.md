@@ -200,8 +200,9 @@ pool makes the rate limit hold across everything Airflow schedules.
    `VITE_API_URL` and `PLOTPOINTS_CORS_ORIGINS`.
 3. **TMDB logo** (their brand asset, not in the repo) next to the disclaimer on the About page;
    currently text only. Required for a public site.
-4. **Posters.** The app uses the chosen title-on-color tiles; real images come from TMDB's image CDN
-   and carry the same attribution requirement.
+4. **Posters. DONE 2026-11-19.** Posters and hero backdrops load from TMDB's image CDN, over the
+   title-on-colour placeholder (which stays as the fallback). They carry the same attribution
+   requirement as the data, so item 3 matters more now.
 
 ### Where we are (2026-11-18)
 
@@ -217,12 +218,13 @@ redesign, posters and monetisation, then deploy*.
   chosen. Open questions: pick one (AdSense needs an approved, deployed domain, so this cannot be
   finished before deploy), mobile placement (rails vanish below 1600px, so phones and laptops see no
   ads and earn nothing), and real adblock detection instead of always showing the card.
-- **Posters.** Snapshot already carries `poster_path`, but the catalog's lean payload has no
-  `images` append, so there is only TMDB's single default poster per title, not a US-language one.
-  US posters means adding `images` with `include_image_language=en,null` to the catalog append set
-  and choosing the top English poster in dbt. That re-enriches ~23.7k titles (~2.5 h, as before) or
-  a targeted backfill of `/images` alone. Needs a decision, and TMDB's attribution requirement
-  applies to the images.
+- **Posters (done 2026-11-19, no re-enrich).** The earlier note here assumed US-language posters
+  needed an `images` append and a ~2.5 h re-enrich. Wrong: enrich sends no `language`, so TMDB
+  answers in its en-US default and `poster_path` is already its preferred English poster (8 of 8
+  non-English films spot-checked: Parasite, Drive My Car, Amélie, Spirited Away, Pan's Labyrinth,
+  Oldboy, Cinema Paradiso, The Handmaiden). `backdrop_path` was in RAW and `DIM_MEDIA` all along and
+  only had to be exported: snapshot `d4c5aac7e90e` carries 23,739 posters and 23,716 backdrops.
+  TMDB's attribution requirement applies to the images.
 - **Licensing conflict to resolve before ads.** Decision 8 notes TMDB's free tier is non-commercial
   and a project whose primary purpose is revenue needs a license. Ads put PlotPoints on the wrong
   side of that; get the commercial terms (or an alternative image/metadata source) settled before
@@ -285,6 +287,15 @@ only on a synthetic split of it.
    near-miss arthouse and international cinema that never accumulates US votes, and metadata stays
    rich enough for the embedding documents and the quality prior. Note this means the earlier
    "50-80k titles" goal is not reachable without taking the featurette-heavy tail.
+   **Re-checked against real users (2026-11-19), and kept at 100.** Three Letterboxd exports and one
+   RSS feed (377 films): 97.3% matched. Of the 10 misses, 3 were matcher errors on films already in
+   the catalog (*School of Rock* titled "The School of Rock"; *The Fall* 2006 vs TMDB 2008;
+   *Hamilton* re-dated by TMDB 2020 -> 2025), 2 were TV, 1 a 12-minute short, and 4 were real films
+   at 47, 29, 8 and 5 votes. Measured supply by floor (per-year `/discover` counts): 100 -> 23,781,
+   75 -> 28,548, 50 -> 37,154, 35 -> 46,915, 20 -> 67,519, 10 -> 107,440. A 50 floor (+1.4 h enrich)
+   catches none of the four; 20 (+4.5 h) catches two, and the two the users loved (8 and 5 votes)
+   are out of reach of any floor. So the matcher was fixed (decision 9) and a user's own missing
+   films are enriched directly as taste-only seeds (decision 12) instead.
 6. **Orchestration choices (Phase 5).** Astro CLI + Docker Desktop (Airflow cannot run natively on
    Windows); Cosmos for one task per dbt model; Airflow 3 Assets (not time) to chain ingest ->
    transform; per-run idempotency keyed on the Airflow `run_id`, because Airflow 3 manual triggers
@@ -466,19 +477,79 @@ only on a synthetic split of it.
    (a year either side tolerated, the most-voted film winning and the row flagged ambiguous), and
    `build_profiles` counts a rewatch only from RSS rows. Not yet verified on a real export zip, only
    on a synthetic one in unit tests.
+   **Rebuilt 2026-11-19 and verified on three real exports.** `api/matching.py` now matches in tiers,
+   each tried only when the narrower one finds nothing (so a remake's exact year always wins):
+   strict title at the exact year, then +-1; a loose title (accents folded, `&` = and, II = 2, one
+   leading article dropped in six languages) at the exact year, then +-1; then +-2. Both the TMDB
+   title and the original title are indexed. Rows still unmatched go to `api/tmdb_lookup.py`, which
+   searches TMDB at import time (only for those rows, at most 200 per import, cached): an exact title
+   at the closest year catches re-dated films like *Hamilton*; an exact TV title marks the row as TV;
+   anything else is a real film the catalog lacks (decision 12). Edge cases are pinned in
+   `tests/test_matching.py` and `tests/test_tmdb_lookup.py`. The API reads `TMDB_API_KEY` from its
+   environment, or that one value from a local `.env`; without it, matching is snapshot-only.
 10. **Consent and deletion for ingested users.** Storing someone's viewing history in the warehouse
     needs a clear consent notice at import time and a way to delete it, even though the RSS feed is
     public and an export is private. **Built in Phase 7-8** (consent checkbox, deletion token, the
     `user_ingest` delete/purge steps); awaiting the AWS permissions and a real round trip.
 11. **API host** (Cloud Run vs Render), decided at deploy time; the image is host-agnostic and is
     measured at ~225 MB resident, inside either free tier's memory.
-12. **Obscure imported titles join the recommendable catalog.** `user_ingest` enriches films a
-    person imported that the catalog lacks, and they are then embedded and served to everyone,
-    including titles under the 100-vote floor. A candidate vote floor in both scorers (they
-    already share constants) would keep seeds unrestricted and candidates clean.
+12. **Obscure imported titles: taste only, never recommended. RESOLVED 2026-11-19.** A film someone
+    imported that the catalog lacks is enriched and embedded so it counts in their profile, but
+    `CANDIDATE_MIN_VOTES = 100` (in `scoring.py`, shared with the SQL scorer) keeps anything under
+    the catalog floor out of every recommendation. Such films reach the pipeline two ways: in a
+    consented import, or on the **anonymous wanted-title list** the API writes on every import
+    (`inbox/titles/*.json`: `(media_type, tmdb_id)` pairs and a timestamp, nothing about who asked,
+    so no consent is needed). `user_ingest land` copies the list into `RAW.WANTED_TITLES`; `titles`
+    enriches whatever neither list's films have in `RAW.TMDB_TITLES` (capped at 500 per run).
+    Until the S3 inbox has its IAM, `just user-ingest titles --local-inbox` reads the local inbox.
+    First run: 5 titles (*Golden Boy*, *Last Night at the Alamo*, *Frogman*, *Evil Bong 2*,
+    *Possibly in Michigan*), snapshot `d4c5aac7e90e` (23,752 titles).
 13. **Light-mode accent vs body text.** Vault 24 `#3F3327` has 10.1:1 contrast on the page, but only
     1.31:1 against the body text, so the accent reads nearly as text in light mode. WCAG does not
     require a gap; whether it is enough to look intentional is a judgement for the running app.
+14. **Letterboxd ratings instead of TMDB's: not available.** Letterboxd's API is by request only, its
+    terms forbid scraping, and exports and RSS hold only the member's own ratings, not the community
+    average. The quality prior stays on the Bayesian-shrunk TMDB rating unless API access is granted.
+15. **Logging and run visibility (planned, not built).** Today you can see what a run is doing only
+    by watching its terminal. What exists and what is missing:
+    - *Pipeline output is `print()`.* Only `include/plotpoints_airflow.py` uses `logging` (the single
+      greppable `PIPELINE FAILURE` line). Under Airflow the prints still land in task logs; a `just`
+      run on the host leaves nothing once the terminal closes.
+    - *Silent stretches.* `fetch_catalog` accumulates in memory and prints only when done, so its ~8
+      minutes look hung. Enrich prints every 100 titles, which is fine; `load` and
+      `dbt build` print per step.
+    - *No run history.* Only enrich leaves a summary (`catalog_enriched.summary.json`, overwritten each
+      run). Load row counts, dbt results, the snapshot version published and `user_ingest` counts live
+      only in the terminal or an Airflow task log, so "what did last Tuesday's run do" has no answer
+      outside Airflow's database.
+    - *The API is blind.* No request log and no counters. Failures are swallowed on purpose so an
+      import never fails: `record_wanted` ignores storage errors and `TmdbLookup` turns any TMDB
+      error into "not found". That is right for the user and wrong for the operator, who cannot tell
+      a bad TMDB key from a film that does not exist.
+    - *Already good:* `pipeline_monitor` (freshness, quality, 24 h cost), `mart_pipeline_health`
+      (per-batch), `just cost`, and a single `notify_failure` hook that a Slack or email destination
+      can be added to without touching any DAG.
+
+    Proposed, smallest useful steps first:
+    1. **Progress for `fetch_catalog`:** a line every N release years or pages (needs an image
+       rebuild to reach Airflow).
+    2. **One shared logger for `src/`** (stdlib `logging`, one format carrying the step and run id),
+       replacing the `print()`s. `src/` must still never import Airflow; Airflow already captures
+       the root logger, so DAG logs improve for free.
+    3. **A run record per step**, appended as one JSON line to `data/logs/runs.jsonl`: step, start and
+       end, counts (fetched, enriched, rows loaded, titles embedded, snapshot version). A later
+       `RAW.PIPELINE_RUNS` table could carry the same record into dbt monitoring.
+    4. **API logging:** one line per request (method, route, status, milliseconds) and counters for
+       import outcomes (matched, missing, TV, TMDB lookups, lookup failures, skipped lookups,
+       wanted-list writes). Log the snapshot version at start-up. Surface a failed TMDB lookup as a
+       warning with a count, never as an import error.
+
+    **Privacy rule, from the start:** never log request bodies, films, ratings, Letterboxd usernames,
+    deletion tokens or the TMDB key. `tmdb_get` already raises path-only errors for the same reason.
+    Counts and route names only.
+
+    Open: where logs go once deployed (Cloud Run and Render both capture stdout), retention, and
+    whether error tracking (a Sentry-style service) is worth adding before there is real traffic.
 
 ---
 

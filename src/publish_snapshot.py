@@ -51,7 +51,7 @@ def build(conn) -> tuple[np.ndarray, dict, str, str]:
             f"""
             select e.media_key, e.embedding, m.media_type, m.tmdb_id, m.title,
                    year(m.release_date), m.runtime_minutes, m.tmdb_rating, m.vote_count,
-                   m.poster_path, m.franchise
+                   m.poster_path, m.franchise, m.original_title, m.backdrop_path
             from {db}.MART.MEDIA_EMBEDDINGS e
             join {db}.MART.DIM_MEDIA m on m.media_key = e.media_key
             where e.embedding_model = %s
@@ -109,6 +109,8 @@ def build(conn) -> tuple[np.ndarray, dict, str, str]:
         "rating": [None if r[7] is None else round(float(r[7]), 3) for r in rows],
         "votes": [None if r[8] is None else int(r[8]) for r in rows],
         "poster": [r[9] for r in rows],
+        "backdrop": [r[12] for r in rows],
+        "original_title": [r[11] if r[11] and r[11] != r[4] else None for r in rows],
         "franchise": [r[10] for r in rows],
         "genres": [sorted(genres.get(r[0], [])) for r in rows],
         "providers": [sorted(by_media.get(r[0], [])) for r in rows],

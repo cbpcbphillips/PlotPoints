@@ -184,3 +184,14 @@ def test_influence_is_empty_without_candidate_picks(snap):
     profile = liked(snap, "A00", "A01")
     assert scoring.influence(snap, {"u": profile}, []) == []
     assert scoring.influence(snap, {"u": profile}, [idx(snap, "A00")]) == []  # a watched film
+
+
+def test_a_low_vote_title_steers_as_a_seed_but_is_never_recommended(snap):
+    snap.votes[idx(snap, "B00")] = 8  # an obscure film someone imported
+    snap.votes[idx(snap, "A04")] = 8  # an obscure film in the liked cluster
+    # liking only the obscure B film still points the list at the B cluster
+    results = rank(snap, {"u": liked(snap, "B00")}, limit=60)
+    assert results and all(r["title"].startswith("B") for r in results[:10])
+    everyone = rank(snap, {"u": liked(snap, "A00", "A01")}, limit=60)
+    assert idx(snap, "A04") not in [r["index"] for r in everyone]
+    assert idx(snap, "B00") not in [r["index"] for r in everyone]

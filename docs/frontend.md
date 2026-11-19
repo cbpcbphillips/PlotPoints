@@ -1,7 +1,9 @@
-# Running the API and frontend locally
+# Frontend
 
-The API serves recommendations from an in-memory **snapshot** (no Snowflake in the request path);
-the frontend is a React + Vite app that talks to it. Run both and open <http://localhost:5173>.
+The frontend is a React + Vite + TypeScript + Tailwind app in `web/`. It talks to a small FastAPI
+service that serves recommendations from an in-memory **snapshot** (no Snowflake in the request
+path). Run both and open <http://localhost:5173>. To get data into the snapshot in the first place,
+see [pipeline.md](pipeline.md).
 
 ## Prerequisites
 
@@ -41,7 +43,7 @@ just api
 - Health check: <http://127.0.0.1:8000/health>; loaded snapshot version: `/meta`.
 
 Endpoints: `GET /health`, `GET /meta`, `POST /import/letterboxd`, `POST /match`, `POST /recommend`,
-`POST /franchises`, `POST /consent`, `POST /delete`.
+`POST /franchises`, `POST /profile`, `POST /consent`, `POST /delete`.
 
 ## 4. Start the frontend
 
@@ -62,7 +64,7 @@ Other frontend commands:
 | Command | What it does |
 |---|---|
 | `npm run typecheck` | TypeScript check |
-| `npm test` | Vitest unit tests (Letterboxd export parser) |
+| `npm test` | Vitest unit tests (export parser, import helpers, page logic) |
 | `npm run build` | Typecheck + production build into `web/dist/` |
 | `npm run preview` | Serve the production build locally |
 
@@ -75,6 +77,7 @@ Other frontend commands:
 | `PLOTPOINTS_CORS_ORIGINS` | API | `http://localhost:5173` | Comma-separated allowed origins (needed when the frontend is hosted elsewhere) |
 | `PLOTPOINTS_INBOX` | API | `local` | `local` writes consented imports under `data/inbox/`; `s3` writes to the bucket |
 | `INBOX_AWS_ACCESS_KEY_ID` / `INBOX_AWS_SECRET_ACCESS_KEY` | API (inbox `s3` mode) | — | Write-only S3 credential; also needs `AWS_S3_BUCKET`, `AWS_REGION` |
+| `TMDB_API_KEY` | API (optional) | read from `.env` locally | Lets `/match` ask TMDB about import rows the snapshot cannot match (re-dated films, TV, films outside the catalog). Without it matching is snapshot-only |
 | `VITE_API_URL` | Frontend build | `/api` | Absolute API URL for a deployed frontend, e.g. `https://plotpoints-api.example.run.app` |
 
 Locally you need none of these; the defaults work.

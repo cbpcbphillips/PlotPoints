@@ -24,7 +24,10 @@ Copy `.env.example` to `.env` as you go and fill in values as each step produces
 ## 1. TMDB
 
 1. Create an account, then go to Settings → API and request a key (choose "Developer").
-2. Set `TMDB_API_KEY` in `.env`.
+2. Set `TMDB_API_KEY` in `.env`. The pipeline uses it to enrich titles. The serving API also uses
+   it, optionally, to resolve import rows the snapshot cannot match: deployed, pass it as an
+   environment variable; locally the API reads that one value from `.env`. Without it the API still
+   works, with snapshot-only matching.
 
 ## 2. Letterboxd
 

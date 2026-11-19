@@ -20,6 +20,7 @@ interface Entry {
   match: number | null
   score: number | null
   tmdb: number | null
+  poster: string | null
   best: boolean
 }
 
@@ -37,6 +38,7 @@ export function entriesOf(f: FranchiseGroup): Entry[] {
     match: r.match,
     score: r.score,
     tmdb: r.tmdb_rating,
+    poster: r.poster_path,
     best: i === 0,
   }))
   const seen: Entry[] = f.seen.map((s) => ({
@@ -49,6 +51,7 @@ export function entriesOf(f: FranchiseGroup): Entry[] {
     match: null,
     score: null,
     tmdb: s.tmdb_rating,
+    poster: s.poster_path,
     best: false,
   }))
   return [...unseen, ...seen]
@@ -115,7 +118,7 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
           </span>
         </div>
         <div>
-          <Poster id={best.tmdb_id} title={best.title} />
+          <Poster id={best.tmdb_id} title={best.title} path={best.poster_path} />
         </div>
         <div className="bm">
           <span className="eyebrow">Best match · unseen</span>
@@ -136,7 +139,7 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
             <figure key={e.key} className={`fc m-0${e.best ? ' best' : ''}${e.seen ? ' seen' : ''}`}>
               <div className="pw">
                 <Tag e={e} />
-                <Poster id={e.id} title={e.title} small />
+                <Poster id={e.id} title={e.title} path={e.poster} small />
               </div>
               <figcaption>
                 <b>{e.title}</b>

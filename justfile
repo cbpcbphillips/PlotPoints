@@ -24,9 +24,10 @@ catalog-enrich *args:
 smoke-test:
     uv run src/smoke_test_connections.py
 
-# Load an enriched checkpoint into its RAW table (source = diary | catalog)
-load source:
-    uv run src/load_snowflake.py {{source}}
+# Load an enriched checkpoint into its RAW table (source = diary | catalog | user_titles).
+# Extra args pass through, e.g. `just load catalog --run-id 2026-11-19` for an idempotent retry
+load source *args:
+    uv run src/load_snowflake.py {{source}} {{args}}
 
 # --- Recommendations (Phase 6) ---
 
@@ -137,5 +138,5 @@ install-hooks:
 # --- User inbox (Phase 7c) ---
 
 # Process the S3 inbox: land | delete | titles | purge | all  (needs PLOTPOINTS_INBOX unset or s3)
-user-ingest step="all":
-    uv run src/user_ingest.py {{step}}
+user-ingest step="all" *args:
+    uv run src/user_ingest.py {{step}} {{args}}

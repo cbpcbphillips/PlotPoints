@@ -655,9 +655,17 @@ body::before {
       var(--bg)
     );
   }
+  .backdrop img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
   .backdrop::before {
     content: '';
     position: absolute;
+    z-index: 1;
     inset: 0;
     background: linear-gradient(0deg, rgba(0, 0, 0, 0.5), transparent 55%);
   }
@@ -670,6 +678,7 @@ body::before {
   }
   .backdrop span {
     position: relative;
+    z-index: 2;
     font: 600 11px var(--font-mono);
     letter-spacing: 0.3em;
     color: #eceaf4;

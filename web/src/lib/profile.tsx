@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import type { Film } from './types'
+import type { Film, MissingFilm } from './types'
 
 /**
  * The only thing PlotPoints remembers about a person, and it never leaves their browser unless
@@ -19,6 +19,8 @@ export interface Profile {
   deletionToken?: string
   /** tmdb ids the person said "not for me" to; sent as a 1-star rating so they act as dislikes */
   notForMe: number[]
+  /** films the profile cannot use yet (not in the catalog, TV, not found), for the History page */
+  missing?: MissingFilm[]
 }
 
 const KEY = 'pp-profile'

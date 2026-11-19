@@ -1,7 +1,8 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { FilmCard } from '../components/FilmCard'
-import { Poster } from '../components/Poster'
+import { Poster, tmdbImage } from '../components/Poster'
 import { Shell } from '../components/Shell'
 import { Gauge, Sig, Stars } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
@@ -46,7 +47,17 @@ export function useRecommendations(
 const LABELS = ['Closest film you rated', 'Second closest', 'Third closest']
 
 /** Decorative constellation behind the hero: the pick is the lit point nearest your cluster. */
-function Backdrop() {
+function Backdrop({ path }: { path: string | null }) {
+  const [failed, setFailed] = useState(false)
+  if (path && !failed) {
+    return (
+      <div className="backdrop" role="img" aria-label="Film still">
+        <img src={tmdbImage(path, 'w1280')} alt="" decoding="async" onError={() => setFailed(true)} />
+        <span>NOW SHOWING</span>
+        <span>YOUR NEAREST POINT IN TASTE SPACE</span>
+      </div>
+    )
+  }
   return (
     <div className="backdrop" role="img" aria-label="Decorative backdrop">
       <svg viewBox="0 0 800 335" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -85,11 +96,11 @@ function Hero({
   return (
     <section className="hero" aria-labelledby="pick">
       <div className="lb">
-        <Backdrop />
+        <Backdrop path={r.backdrop_path} />
       </div>
       <div className="hero-body">
         <div className="pwrap">
-          <Poster id={r.tmdb_id} title={r.title} />
+          <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
         </div>
         <div className="txt">
           <p className="eyebrow m-0">Recommended</p>
@@ -178,7 +189,7 @@ function Beyond({ top, other }: { top: Result; other: Result }) {
       <span className="tag">Beyond {top.franchise}</span>
       <h2>Best outside the franchise</h2>
       <div className="sp">
-        <Poster id={other.tmdb_id} title={other.title} />
+        <Poster id={other.tmdb_id} title={other.title} path={other.poster_path} />
         <div>
           <b className="font-title">{other.title}</b>
           <div className="meta">
@@ -198,7 +209,7 @@ function EnjoyedCard({ e }: { e: Enjoyed }) {
   return (
     <figure className="fc m-0">
       <div className="pw">
-        <Poster id={e.tmdb_id} title={e.title} />
+        <Poster id={e.tmdb_id} title={e.title} path={e.poster_path} />
       </div>
       <figcaption>
         <b>{e.title}</b>

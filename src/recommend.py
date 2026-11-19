@@ -45,6 +45,7 @@ from connection.snowflake import get_snowflake_connection
 # The constants and weight_for live in scoring.py (pure, no Snowflake) so this SQL scorer and the
 # API's numpy scorer cannot drift apart. They are re-exported here for the CLI and its callers.
 from scoring import (
+    CANDIDATE_MIN_VOTES,
     DISLIKE_WEIGHT,
     MIN_RUNTIME_MINUTES,
     QUALITY_POWER,
@@ -160,6 +161,7 @@ candidates as (
     where e.embedding_model = %(model)s
       and e.media_key not in (select media_key from watched)
       and (m.runtime_minutes is null or m.runtime_minutes >= %(min_runtime)s)
+      and coalesce(m.vote_count, 0) >= %(min_votes)s
 ),
 
 -- strongest love per member, so weights normalize to (0, 1] and members share a scale
@@ -292,6 +294,7 @@ def score_profiles(
         "dislike_weight": dislike_weight,
         "quality_power": quality_power,
         "min_runtime": min_runtime,
+        "min_votes": CANDIDATE_MIN_VOTES,
         "prior_votes": QUALITY_PRIOR_VOTES,
         "k": k,
     }

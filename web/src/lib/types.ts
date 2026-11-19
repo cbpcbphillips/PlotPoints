@@ -29,6 +29,7 @@ export interface Result {
   tmdb_rating: number | null
   runtime: number | null
   poster_path: string | null
+  backdrop_path: string | null
   franchise: string | null
   genres: string[]
   providers: string[]
@@ -100,6 +101,8 @@ export interface ProfileStats {
   five_star: string[]
   newest: number | null
   oldest: number | null
+  /** tmdb ids of the history's films the current snapshot does not hold */
+  missing_ids: number[]
 }
 
 export interface Meta {
@@ -121,6 +124,35 @@ export interface MatchedFilm extends Film {
   title: string
   year: number | null
   ambiguous?: boolean
+  /** How the row was matched: strict / loose title, a wider year window, or a TMDB lookup. */
+  method?: 'strict' | 'loose' | 'wide' | 'tmdb'
+}
+
+/** A real film TMDB knows that the catalog does not hold yet (usually under the vote floor). */
+export interface MissingMatch extends Film {
+  title: string
+  year: number | null
+  tmdb_title: string | null
+  tmdb_year: number | null
+  votes: number
+}
+
+export interface MatchResponse {
+  films: MatchedFilm[]
+  missing: MissingMatch[]
+  tv: { title: string; year: number | null }[]
+  unmatched: { title: string; year: number | null }[]
+  ambiguous: number
+  lookups_skipped: number
+}
+
+/** A film from someone's history that their profile cannot use yet, and why. */
+export interface MissingFilm {
+  title: string
+  year: number | null
+  reason: 'not_in_catalog' | 'tv' | 'not_found'
+  tmdb_id?: number
+  votes?: number | null
 }
 
 export interface ImportedFilm extends MatchedFilm {

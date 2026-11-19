@@ -9,13 +9,15 @@ from fastapi.testclient import TestClient
 from api import letterboxd
 from api.app import create_app
 from api.inbox import Inbox, token_hash
+from api.tmdb_lookup import TmdbLookup
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("PLOTPOINTS_INBOX", "local")
     monkeypatch.setenv("PLOTPOINTS_DATA_DIR", str(tmp_path))
-    with TestClient(create_app(snap=make_snapshot(), inbox=Inbox())) as c:
+    no_tmdb = TmdbLookup(api_key="")  # tests never reach the network
+    with TestClient(create_app(snap=make_snapshot(), inbox=Inbox(), lookup=no_tmdb)) as c:
         yield c
 
 
@@ -290,3 +292,97 @@ def test_profile_stats(client):
     assert r["eras"] == [{"name": "2000s", "count": 3, "share": 100}]
     assert r["top_series"] == {"name": "Alpha", "count": 2}
     assert r["five_star"] == ["A00"] and r["average_runtime"] == 110
+
+
+class StubLookup:
+    """Stands in for TMDB: answers by title and records what it was asked."""
+
+    enabled = True
+
+    def __init__(self, answers):
+        self.answers, self.asked = answers, []
+
+    def resolve(self, rows):
+        self.asked.extend(r["title"] for r in rows)
+        return [self.answers.get(r["title"], {"kind": "not_found"}) for r in rows]
+
+
+def wanted_files(tmp_path):
+    return sorted((tmp_path / "inbox" / "inbox" / "titles").glob("*.json"))
+
+
+def test_match_asks_tmdb_only_about_leftovers_and_records_missing_ids_anonymously(client, tmp_path):
+    stub = StubLookup(
+        {
+            "Redated": {"kind": "movie", "tmdb_id": 1007, "title": "A07", "year": 2000, "votes": 9},
+            "Obscure": {
+                "kind": "movie",
+                "tmdb_id": 555,
+                "title": "Obscure",
+                "year": 1983,
+                "votes": 8,
+            },
+            "A Series": {"kind": "tv"},
+        }
+    )
+    client.app.state.lookup = stub
+    rows = [
+        {"title": "A00", "year": 2000, "rating": 4},  # the snapshot matches it: no lookup
+        {"title": "Redated", "year": 1994, "rating": 3.5},
+        {"title": "Obscure", "year": 1983, "rating": 4},
+        {"title": "A Series", "year": 2024, "rating": 5},
+        {"title": "Nothing", "year": 1999},
+    ]
+    r = client.post("/match", json={"rows": rows}).json()
+    assert stub.asked == ["Redated", "Obscure", "A Series", "Nothing"]
+    by_id = {f["tmdb_id"]: f for f in r["films"]}
+    assert by_id[1000]["method"] == "strict"
+    assert by_id[1007]["method"] == "tmdb" and by_id[1007]["rating"] == 3.5
+    assert [(m["tmdb_id"], m["votes"], m["rating"]) for m in r["missing"]] == [(555, 8, 4)]
+    assert r["tv"] == [{"title": "A Series", "year": 2024}]
+    assert r["unmatched"] == [{"title": "Nothing", "year": 1999}]
+    files = wanted_files(tmp_path)
+    assert len(files) == 1
+    record = json.loads(files[0].read_text(encoding="utf-8"))
+    assert record["titles"] == [{"media_type": "movie", "tmdb_id": 555}]
+    assert set(record) == {"requested_at", "titles"}  # nothing about who asked
+
+
+def test_match_without_a_key_stays_snapshot_only(client, tmp_path):
+    r = client.post("/match", json={"rows": [{"title": "Nothing", "year": 1999}]}).json()
+    assert r["missing"] == [] and r["unmatched"] == [{"title": "Nothing", "year": 1999}]
+    assert wanted_files(tmp_path) == []
+
+
+def test_rss_films_outside_the_catalog_are_recorded(client, monkeypatch, tmp_path):
+    entries = [
+        {
+            "tmdb_id": 1000,
+            "tmdb_media_type": "movie",
+            "film_title": "A00",
+            "film_year": "2000",
+            "rating": 4.0,
+            "rewatch": False,
+        },
+        {
+            "tmdb_id": 424242,
+            "tmdb_media_type": "movie",
+            "film_title": "Rare",
+            "film_year": "1980",
+            "rating": 5.0,
+            "rewatch": False,
+        },
+    ]
+    monkeypatch.setattr("api.app.fetch_feed", lambda u: entries)
+    r = client.post("/import/letterboxd", json={"username": "someone"}).json()
+    assert {f["tmdb_id"]: f["in_catalog"] for f in r["films"]} == {1000: True, 424242: False}
+    record = json.loads(wanted_files(tmp_path)[0].read_text(encoding="utf-8"))
+    assert record["titles"] == [{"media_type": "movie", "tmdb_id": 424242}]
+
+
+def test_results_carry_image_paths(client):
+    s = client.app.state.snap
+    s.poster[5], s.backdrop[5] = "/p.jpg", "/b.jpg"
+    top = client.post("/recommend", json=body(1000, 1001, limit=20)).json()["results"]
+    a05 = next(x for x in top if x["tmdb_id"] == 1005)
+    assert (a05["poster_path"], a05["backdrop_path"]) == ("/p.jpg", "/b.jpg")

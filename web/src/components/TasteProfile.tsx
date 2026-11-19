@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { api } from '../lib/api'
+import { stillMissing } from '../lib/importing'
 import type { Profile } from '../lib/profile'
-import type { ProfileStats, Share } from '../lib/types'
+import type { MissingFilm, ProfileStats, Share } from '../lib/types'
 import { ErrorNote, Loading } from './States'
 
 const HALF = (r: number) => (Number.isInteger(r) ? String(r) : `${Math.floor(r)}½`.replace(/^0/, ''))
@@ -33,7 +34,43 @@ function Row({ k, v }: { k: string; v: string }) {
   )
 }
 
-function Body({ s }: { s: ProfileStats }) {
+const REASON: Record<MissingFilm['reason'], string> = {
+  not_in_catalog: 'Not in the catalog yet. Added on the next update',
+  tv: 'TV series',
+  not_found: 'Not found on TMDB',
+}
+
+/** The films this history holds that the profile cannot use yet, each with the reason. */
+function CantUse({ films }: { films: MissingFilm[] }) {
+  if (!films.length) return null
+  return (
+    <div className="panel mt-4">
+      <div className="flex items-baseline justify-between">
+        <h2>Films we can&rsquo;t use yet</h2>
+        <span className="label">{films.length}</span>
+      </div>
+      <ul className="m-0 mt-2 list-none p-0">
+        {films.map((m) => (
+          <li
+            key={`${m.tmdb_id ?? m.title}|${m.year}`}
+            className="flex flex-wrap justify-between gap-x-4 border-t border-line py-2.5"
+          >
+            <span>
+              <b>{m.title}</b>
+              {m.year && <span className="text-muted"> ({m.year})</span>}
+            </span>
+            <span className="text-sm text-muted">
+              {REASON[m.reason]}
+              {m.votes != null && ` · ${m.votes} TMDB votes`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function Body({ s, missing }: { s: ProfileStats; missing: MissingFilm[] }) {
   const max = Math.max(...s.histogram.map((h) => h.count), 1)
   return (
     <>
@@ -98,6 +135,7 @@ function Body({ s }: { s: ProfileStats }) {
           )}
         </div>
       </div>
+      <CantUse films={stillMissing(missing, s.missing_ids)} />
     </>
   )
 }
@@ -118,7 +156,7 @@ export function TasteProfile({ profile }: { profile: Profile }) {
       )}
       {q.isPending && <Loading what="your profile" />}
       {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
-      {q.data && <Body s={q.data} />}
+      {q.data && <Body s={q.data} missing={profile.missing ?? []} />}
     </section>
   )
 }
