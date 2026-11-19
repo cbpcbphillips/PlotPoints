@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 export function Loading({ what = 'your list' }: { what?: string }) {
   return (
-    <div role="status" className="py-24 text-center text-xl text-muted">
+    <div role="status" className="py-24 text-center text-lg text-muted">
       Finding {what}…
     </div>
   )
@@ -28,13 +28,9 @@ export function ErrorNote({ error, retry }: { error: unknown; retry?: () => void
 
 export function PageTitle({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 pb-3 pt-10 sm:pt-14 lg:pt-20">
-      <h1 className="m-0 text-[34px] font-bold leading-[1.05] tracking-[-0.02em] sm:text-[44px] lg:text-[60px]">
-        {title}
-      </h1>
-      {children && (
-        <p className="m-0 max-w-[36em] text-lg text-muted lg:text-[22px]">{children}</p>
-      )}
+    <section className="pagehead">
+      <h1>{title}</h1>
+      {children && <p className="m-0 max-w-[62ch] text-base text-muted">{children}</p>}
     </section>
   )
 }

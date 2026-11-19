@@ -155,3 +155,32 @@ def test_identity_is_by_index_when_titles_collide(snap):
     results = rank(snap, {"u": liked(snap, "C02", "C03")}, limit=60)
     ids = [r["index"] for r in results if r["title"] == "Good Boy"]
     assert len(set(ids)) == len(ids) == 2  # two different films, both present, not merged
+
+
+def test_influence_ranks_liked_films_by_weighted_similarity(snap):
+    # A00 is loved (5 stars -> weight 2.0), A01 only liked (weight 0.5); both sit in the A cluster
+    profile = [(idx(snap, "A00"), 2.0), (idx(snap, "A01"), 0.5), (idx(snap, "B00"), 2.0)]
+    picks = [r["index"] for r in rank(snap, {"u": profile}, limit=10)]
+    out = scoring.influence(snap, {"u": profile}, picks, top_n=3)
+    assert [e["title"] for e in out][:2] == ["A00", "A01"]
+    assert out[0]["influence"] >= out[1]["influence"] >= out[2]["influence"]
+    # the loved A film beats the equally loved B film, whose cluster the picks are not in
+    by = {e["title"]: e for e in out}
+    assert by["A00"]["influence"] > by["B00"]["influence"]
+    assert all(0.0 <= e["avg_cosine"] <= 1.0 for e in out)
+
+
+def test_influence_weight_matters_among_equally_placed_seeds(snap):
+    heavy, light = (idx(snap, "A00"), 2.0), (idx(snap, "A00"), 0.5)
+    twin = idx(snap, "A00")
+    # same film as heavy vs light seed: the heavier one must carry more influence
+    a = scoring.influence(snap, {"u": [heavy, (idx(snap, "B00"), 1.0)]}, [idx(snap, "A07")])
+    b = scoring.influence(snap, {"u": [light, (idx(snap, "B00"), 1.0)]}, [idx(snap, "A07")])
+    infl = lambda out: next(e["influence"] for e in out if e["index"] == twin)  # noqa: E731
+    assert infl(a) > infl(b)
+
+
+def test_influence_is_empty_without_candidate_picks(snap):
+    profile = liked(snap, "A00", "A01")
+    assert scoring.influence(snap, {"u": profile}, []) == []
+    assert scoring.influence(snap, {"u": profile}, [idx(snap, "A00")]) == []  # a watched film

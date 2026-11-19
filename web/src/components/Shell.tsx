@@ -9,61 +9,48 @@ const TABS: [string, string][] = [
   ['Import', '/import'],
 ]
 
-export function Wordmark({ className = '' }: { className?: string }) {
+function ThemeButton() {
+  const [theme, setTheme] = useState<Theme>(currentTheme)
   return (
-    <div
-      className={`text-center font-bold leading-none tracking-[0.01em] text-[34px] sm:text-[44px] lg:text-[52px] ${className}`}
-    >
-      <Link to="/" className="no-underline">
-        Plot<span className="text-accent">Points</span>
-      </Link>
-    </div>
+    <button type="button" className="btn ghost" onClick={() => setTheme(toggleTheme())}>
+      ◐ {theme === 'dark' ? 'Dark' : 'Light'}
+    </button>
   )
 }
 
-function Nav() {
+/** Sticky, translucent top bar: brand, the four sections, the theme switch. */
+function TopBar({ nav }: { nav: boolean }) {
   return (
-    <nav
-      aria-label="Sections"
-      className="flex flex-nowrap items-center justify-center overflow-x-auto whitespace-nowrap border-y border-line sm:flex-wrap sm:overflow-visible"
-    >
-      {TABS.map(([label, to], i) => (
-        <span key={to} className="flex items-center">
-          {i > 0 && (
-            <span aria-hidden="true" className="mx-[11px] text-muted sm:mx-4 lg:mx-[22px]">
-              /
-            </span>
-          )}
-          <NavLink
-            to={to}
-            className={({ isActive }) =>
-              `border-b-2 px-0.5 py-[13px] text-base font-bold no-underline sm:py-3 sm:text-[17px] lg:text-[18px] ${
-                isActive ? 'border-accent text-accent' : 'border-transparent text-ink'
-              }`
-            }
-          >
-            {label}
-          </NavLink>
-        </span>
-      ))}
-    </nav>
+    <header className="top">
+      <div className="bar">
+        <Link to="/" className="brand">
+          Plot<b>Points</b>
+        </Link>
+        {nav && (
+          <nav aria-label="Sections" className="navlinks flex gap-0.5">
+            {TABS.map(([label, to]) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `navlink${isActive ? ' on' : ''}`}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
+        <ThemeButton />
+      </div>
+    </header>
   )
 }
 
 function Footer() {
-  const [theme, setTheme] = useState<Theme>(currentTheme)
   return (
     <footer className="mt-10 flex flex-wrap justify-center gap-x-5 gap-y-1.5 border-t border-line pt-[22px] text-sm text-muted sm:mt-14 sm:gap-x-6 lg:mt-16 lg:gap-x-7 lg:pt-7 lg:text-[15px]">
       <Link to="/about">About and credits</Link>
       <Link to="/privacy">Privacy</Link>
       <Link to="/privacy#delete">Delete my data</Link>
-      <button
-        type="button"
-        onClick={() => setTheme(toggleTheme())}
-        className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[length:inherit] text-muted underline"
-      >
-        {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      </button>
     </footer>
   )
 }
@@ -74,13 +61,14 @@ function Footer() {
  * "please disable your adblocker" card the site will show when an ad fails to load.
  */
 function AdSlot({ side }: { side: 'left' | 'right' }) {
-  // Width is all the margin beside the 1200px column (160px floor, 1272px = the 4K margin, where
-  // ultrawide stops growing). Height is twice the width, capped at the viewport, 600px minimum.
-  // Text is sized in container-width units so the card scales with it.
+  // Width is the margin beside the 1240px column, from a 160px floor up to a 300px cap (the
+  // standard half-page ad). Beyond that the content scales up instead (.zoomcol in index.css).
+  // Height is twice the width, capped at the viewport, 600px minimum. Text is sized in
+  // container-width units so the card scales with it.
   return (
     <aside
       aria-label={`Sponsored (${side})`}
-      className="@container sticky top-6 hidden [--w:clamp(160px,calc((100vw_-_1200px)/2_-_48px),1272px)] h-[max(600px,min(calc(var(--w)*2),calc(100vh_-_48px)))] w-(--w) shrink-0 self-start rounded-lg border border-dashed border-line bg-surface text-center min-[1400px]:block"
+      className="@container sticky top-6 hidden [--w:clamp(160px,calc((100vw_-_1240px)/2_-_48px),300px)] h-[max(600px,min(calc(var(--w)*2),calc(100vh_-_48px)))] w-(--w) shrink-0 self-start rounded-lg border border-dashed border-line bg-surface text-center min-[1400px]:block"
     >
       <div className="flex h-full flex-col items-center justify-center gap-[6cqw] px-[10cqw] text-center">
         <span className="text-[clamp(11px,5cqw,64px)] font-bold uppercase tracking-[0.14em] text-muted">
@@ -107,11 +95,8 @@ export function Shell({ children, nav = true }: { children: ReactNode; nav?: boo
   return (
     <div className="flex justify-center gap-6 pt-0 min-[1400px]:px-3 min-[1400px]:pt-6">
       <AdSlot side="left" />
-      <div className="flex min-h-screen w-full max-w-[1200px] flex-col px-4 pb-10 sm:px-8 lg:px-10 lg:pb-14 min-[1400px]:px-0 min-[1400px]:pt-0">
-        <header className="pt-16 sm:pt-9 lg:pt-11 min-[1400px]:pt-5">
-          <Wordmark className="pb-3.5 pt-1 sm:pb-5 lg:pb-6 lg:pt-2" />
-          {nav && <Nav />}
-        </header>
+      <div className="zoomcol flex w-full max-w-[1240px] flex-col px-5 pb-28 sm:px-8 min-[1400px]:px-0">
+        <TopBar nav={nav} />
         <main className="flex-1">{children}</main>
         <Footer />
       </div>

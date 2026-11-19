@@ -41,16 +41,22 @@ export function About() {
         </p>
       </Block>
 
-      <Block title="What the match percentage means">
+      <Block title="What the numbers mean">
         <p className="m-0">
-          It is the cosine similarity between a recommendation and the films that explain it,
-          averaged and shown as a percentage. 100% would be a film identical to the ones you rated
-          highly; unrelated films sit around 30 to 40%, so 60% is a strong match.
+          <b>Score</b> is what the list is ordered by. Each film you rated highly is compared with
+          every candidate, corrected for films that are close to everything, and weighted by how
+          much you liked it. It is not a percentage: the best picks sit around 2 to 4.
         </p>
         <p className="m-0">
-          The list is ordered by a refined score that corrects for some films being generally
-          similar to everything. Because of that, the percentages are not strictly decreasing down
-          the list, and that is expected.
+          <b>Match</b> is the cosine similarity between a recommendation and the films that explain
+          it, averaged and shown as a percentage. 100% would be a film identical to the ones you
+          rated highly; unrelated films sit around 30 to 40%, so 60% is a strong match. Because the
+          list is ordered by score, match is not strictly decreasing down it, and that is expected.
+        </p>
+        <p className="m-0">
+          <b>Novelty</b> is 100 minus the similarity to the single film that explains a pick best,
+          so a higher number means the pick is further from anything you have already rated.{' '}
+          <b>TMDB</b> is the film&rsquo;s public rating out of 10.
         </p>
       </Block>
 

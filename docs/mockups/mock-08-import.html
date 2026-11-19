@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlotPoints · 08 Import</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>(function(){var t;try{t=localStorage.getItem('pp-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})();</script>
+<link rel="stylesheet" href="mock-08-shared.css">
+<style>
+.hide{display:none!important}
+.drop{border:2px dashed var(--muted);border-radius:16px;padding:30px 20px;text-align:center;display:grid;justify-items:center;gap:4px;background:color-mix(in srgb,var(--raised) 50%,transparent);transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent-text);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.drop svg{color:var(--accent-text);margin-bottom:4px}.drop b{font-size:18px}.drop small{color:var(--muted)}
+.field label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+.inputrow{display:flex;align-items:center;background:var(--bg);border:1px solid var(--muted);border-radius:10px;padding:0 14px}
+.inputrow .at{color:var(--muted);font-size:14px;white-space:nowrap}.inputrow input{flex:1;background:none;border:0;color:var(--text);font:inherit;padding:14px 4px;min-width:0;outline:0}
+.inputrow:focus-within{border-color:var(--accent-text);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-text) 28%,transparent)}
+.hint{font-size:13px;color:var(--muted);margin-top:6px}
+.keep{display:flex;gap:12px;align-items:flex-start;margin:18px 0;font-size:14px}.keep input{width:20px;height:20px;accent-color:var(--accent-text);margin-top:2px;flex:none}
+/* first visit: constellation */
+.chero{position:relative;border:1px solid var(--border);border-radius:20px;overflow:hidden;margin:26px 0;background:linear-gradient(105deg,#22262D,color-mix(in srgb,var(--pt-lo) 40%,#22262D) 55%,color-mix(in srgb,var(--accent) 25%,#2a0a0d))}
+:root[data-theme="light"] .chero{background:linear-gradient(105deg,#1D2229,#3a3f49 55%,#7a1620)}
+.chero svg.bg{position:absolute;inset:0;width:100%;height:100%;opacity:.6}
+.chero .in{position:relative;display:grid;grid-template-columns:1fr 440px;gap:34px;padding:46px;align-items:center;color:#ECE9E3}
+.chero h1{font:700 clamp(36px,4.6vw,60px)/1.02 var(--title);letter-spacing:-.02em;margin:10px 0 12px}.chero .lede{color:#B9BEC7;font-size:16px;max-width:44ch}
+.glass{background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:18px;padding:22px;color:var(--text)}
+.opt{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.opt button{text-align:left;font:inherit;color:var(--text);background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;display:grid;gap:2px}
+.opt button b{font-size:14px}.opt button small{color:var(--muted);font-size:12px}.opt button[aria-pressed="true"]{border-color:var(--accent-text);background:color-mix(in srgb,var(--accent-text) 12%,var(--surface))}
+.opt .rec{font:700 9px var(--mono);letter-spacing:.14em;color:var(--accent-text);text-transform:uppercase}
+.mini-steps{display:flex;gap:22px;flex-wrap:wrap;margin-top:22px;color:#B9BEC7;font-size:13px}.mini-steps b{color:var(--accent);font-family:var(--mono);margin-right:6px}
+/* returning: dashboard */
+.dash{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-top:20px}
+.hist{display:flex;align-items:flex-end;gap:8px;height:110px;margin:14px 0 6px}
+.hist div{flex:1;display:flex;flex-direction:column;gap:6px;justify-content:flex-end;align-items:stretch;text-align:center;height:100%;font:600 11px var(--mono);color:var(--muted)}
+.hist i{display:block;width:100%;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--pt-hi),var(--pt-lo));height:calc(var(--v)*.78px)}
+.hist div:nth-child(8) i,.hist div:nth-child(9) i{background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 50%,#000))}
+.gbars{display:grid;gap:9px}.gbars div{display:grid;grid-template-columns:84px 1fr 38px;gap:10px;align-items:center;font-size:13px;color:var(--muted)}.gbars span:last-child{text-align:right;font-family:var(--mono)}
+@media (max-width:980px){.chero .in,.dash{grid-template-columns:1fr}.chero .in{padding:26px}}
+</style></head>
+<body data-page="im">
+<svg width="0" height="0" style="position:absolute"><symbol id="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol></svg>
+<main class="wrap">
+ <div data-state="first">
+  <div class="chero"><svg class="bg" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="#B7BCC6"><circle cx="60" cy="60" r="3"/><circle cx="170" cy="150" r="4"/><circle cx="280" cy="70" r="3"/><circle cx="360" cy="220" r="5"/><circle cx="470" cy="110" r="3"/><circle cx="560" cy="300" r="4"/><circle cx="700" cy="80" r="3"/><circle cx="120" cy="320" r="3"/><circle cx="640" cy="200" r="4"/></g><g stroke="#E5484D" stroke-opacity=".35" fill="none"><path d="M60 60L170 150M170 150L360 220M360 220L560 300M280 70L360 220M360 220L640 200M470 110L640 200"/></g><circle cx="640" cy="200" r="9" fill="#E5484D"/><circle cx="640" cy="200" r="16" fill="none" stroke="#E5484D"/></svg>
+   <div class="in"><div><p class="eyebrow" style="color:var(--accent)">Taste constellation</p><h1>See where your taste lands among 23,747 films.</h1><p class="lede">Every film you rate becomes a point. We find the unwatched ones that sit closest to the ones you love.</p>
+    <div class="mini-steps"><span><b>01</b>Export</span><span><b>02</b>Import</span><span><b>03</b>Match</span></div></div>
+    <div class="glass"><div class="opt"><button type="button" aria-pressed="true" data-opt="x"><span class="rec">Recommended</span><b>Letterboxd export</b><small>Your whole history</small></button><button type="button" aria-pressed="false" data-opt="u"><span class="rec" style="color:var(--muted)">Quick</span><b>Username</b><small>Latest ~50 entries</small></button></div>
+     <div data-pane="x"><div data-form="drop"></div><p class="hint" style="margin-top:12px">Not sure how to export? In Letterboxd open Settings, then Import &amp; Export, then Export Your Data.</p></div><div data-pane="u" class="hide"><div data-form="user"></div></div><div data-form="tail"></div></div></div></div>
+ </div>
+
+ <div data-state="ret" class="hide">
+  <div class="pagehead"><p class="eyebrow">Your profile</p><h1>Your history</h1><p>The more films you rate, the sharper the matches. Add an export any time, or start over as someone else.</p></div>
+  <div class="tiles" style="margin-top:20px"><div class="tile hl"><p class="label">Films</p><b>412</b></div><div class="tile"><p class="label">Rated</p><b>397</b></div><div class="tile"><p class="label">Average</p><b>3.8 ★</b></div><div class="tile"><p class="label">Not in catalog</p><b>15</b></div></div>
+  <div class="dash"><div class="panel"><div style="display:flex;justify-content:space-between;align-items:baseline"><h2>Your rating spread</h2><span class="label">397 ratings</span></div>
+    <div class="hist" role="img" aria-label="Rating histogram"><div><i style="--v:6"></i>½</div><div><i style="--v:8"></i>1</div><div><i style="--v:10"></i>1½</div><div><i style="--v:18"></i>2</div><div><i style="--v:30"></i>2½</div><div><i style="--v:52"></i>3</div><div><i style="--v:70"></i>3½</div><div><i style="--v:100"></i>4</div><div><i style="--v:62"></i>4½</div><div><i style="--v:34"></i>5</div></div>
+    <p class="hint">Liked films (4★ and up) pull hardest. Below 3★ steers matches away.</p>
+    <h2 style="margin-top:22px;margin-bottom:12px">Top genres</h2><div class="gbars"><div><span>Thriller</span><span class="bar-h"><i style="width:92%"></i></span><span>31%</span></div><div><span>Drama</span><span class="bar-h"><i style="width:80%"></i></span><span>27%</span></div><div><span>Mystery</span><span class="bar-h"><i style="width:55%"></i></span><span>18%</span></div><div><span>Crime</span><span class="bar-h"><i style="width:40%"></i></span><span>13%</span></div></div></div>
+   <div style="display:grid;gap:18px;align-content:start"><div class="panel"><h2 style="margin-bottom:12px">Add more history</h2><div data-form="drop"></div><button class="btn primary" style="width:100%;justify-content:center;margin-top:14px" type="button">Add to my list</button></div>
+    <div class="panel"><h2 style="margin-bottom:10px">Privacy</h2><p style="color:var(--muted);font-size:14px">Agreed Nov 12, 2026 to keep your ratings. Delete them any time; they are removed the next time the pipeline runs.</p><div class="chips" style="margin-top:14px"><button class="btn danger" type="button">Delete my data</button><button class="btn secondary" type="button">Switch user</button></div></div></div></div>
+ </div>
+</main>
+<script src="mock-08-shared.js"></script>
+<script>
+(function(){
+const {$,$$}=PP;
+const F={
+ drop:'<div class="drop" tabindex="0"><svg width="34" height="34" aria-hidden="true"><use href="#up"/></svg><b>Drop your Letterboxd export here</b><small>ratings.csv, diary.csv or the whole .zip</small><button class="btn secondary" style="margin-top:10px" type="button">Choose a file</button></div>',
+ user:'<div class="field"><label>Your Letterboxd username</label><div class="inputrow"><span class="at">letterboxd.com/</span><input placeholder="for example VetOW" autocomplete="off"></div><p class="hint">A username only returns your latest 50 or so entries.</p></div>',
+ tail:'<label class="keep"><input type="checkbox"><span>Let PlotPoints keep my imported ratings to improve the project. I can ask to delete them at any time.</span></label><button class="btn primary lg" style="width:100%;justify-content:center" type="button">Find my recommendations</button>'
+};
+$$('[data-form]').forEach(el=>el.innerHTML=F[el.dataset.form]);
+$$('[data-opt]').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.opt,g=b.closest('.glass');$$('[data-opt]',g).forEach(x=>x.setAttribute('aria-pressed',x===b));$$('[data-pane]',g).forEach(p=>p.classList.toggle('hide',p.dataset.pane!==t))}));
+$$('.drop').forEach(d=>{['dragover','dragenter'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.add('over')}));['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.remove('over')}))});
+// state toggle: first visit vs returning
+const bar=document.createElement('div');bar.className='switch';
+bar.innerHTML='<div class="wrap"><span class="label">State</span><div class="seg"><button type="button" aria-pressed="true" data-st="first">First visit</button><button type="button" aria-pressed="false" data-st="ret">Returning</button></div><p class="desc"></p></div>';
+$('.top').after(bar);
+const D={first:'First visit: constellation hero with the form in a glass card. Export is recommended; username is the quick option.',ret:'Returning visitor: stat tiles, rating spread and top genres, with add-more history and privacy on the side.'};
+function setState(st){$$('[data-state]').forEach(x=>x.classList.toggle('hide',x.dataset.state!==st));$$('[data-st]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.st===st));$('.desc',bar).textContent=D[st];try{history.replaceState(null,'','#'+st)}catch(e){}}
+$$('[data-st]').forEach(b=>b.addEventListener('click',()=>setState(b.dataset.st)));
+setState(location.hash==='#ret'?'ret':'first');
+})();
+</script>
+</body></html>

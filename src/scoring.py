@@ -255,3 +255,60 @@ def rank(
             }
         )
     return results
+
+
+def influence(
+    snap: Snapshot,
+    profiles: Profile,
+    picks: list[int],
+    *,
+    member: str | None = None,
+    top_n: int = 6,
+    min_runtime: int = MIN_RUNTIME_MINUTES,
+) -> list[dict]:
+    """Which liked films best explain a set of picks, strongest first.
+
+    Uses the scorer's own unit: each seed's similarity to a candidate is standardized against that
+    seed's distribution over all candidates (the hubness correction), then weighted by how much the
+    person liked the seed (rating - 3, over their largest weight). A seed's influence is that
+    weighted z summed over the picks, so a film you loved that sits close to many picks outranks
+    one you merely liked, and a hub that is close to everything is not rewarded for it.
+
+    `picks` are catalog row indices. `avg_cosine` is the plain mean cosine to the picks, for show.
+    Returns [] when no pick is a candidate or the member has no liked films.
+    """
+    members = _split(profiles)
+    m = next((x for x in members if x.name == member), members[0])
+    watched = np.zeros(len(snap), dtype=bool)
+    for films in profiles.values():
+        for idx, _ in films:
+            watched[idx] = True
+    cand = np.flatnonzero(~watched & (np.isnan(snap.runtime) | (snap.runtime >= min_runtime)))
+    where = {int(i): k for k, i in enumerate(cand)}
+    rows = [where[p] for p in picks if p in where]
+    if not rows:
+        return []
+
+    cand_vecs = snap.vectors[cand]
+    infl = np.empty(len(m.liked_idx))
+    avg = np.empty(len(m.liked_idx))
+    for start in range(0, len(m.liked_idx), _CHUNK):
+        sel = slice(start, start + _CHUNK)
+        sims = (cand_vecs @ snap.vectors[m.liked_idx[sel]].T).astype(np.float64)
+        z, _, _ = _z_pass(sims)
+        infl[sel] = (z[rows] * (m.liked_w[sel] / m.w_max)).sum(axis=0)
+        avg[sel] = sims[rows].mean(axis=0)
+
+    order = np.argsort(-infl, kind="stable")[:top_n]
+    return [
+        {
+            "media_key": snap.media_key[m.liked_idx[j]],
+            "tmdb_id": int(snap.tmdb_id[m.liked_idx[j]]),
+            "title": snap.title[m.liked_idx[j]],
+            "index": int(m.liked_idx[j]),
+            "weight": float(m.liked_w[j]),
+            "influence": float(infl[j]),
+            "avg_cosine": float(avg[j]),
+        }
+        for j in order
+    ]

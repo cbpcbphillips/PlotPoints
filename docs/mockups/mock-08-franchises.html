@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlotPoints · 08 Franchises</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>(function(){var t;try{t=localStorage.getItem('pp-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})();</script>
+<link rel="stylesheet" href="mock-08-shared.css">
+<style>
+.tools{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0 18px}
+.tools .chip{cursor:pointer;font:600 13px var(--display)}
+.shelf{display:grid;grid-template-columns:330px 1fr;gap:22px;margin-bottom:16px;padding:0;overflow:hidden}
+.shelf .feat{padding:20px;display:grid;grid-template-columns:96px 1fr;gap:16px;border-right:1px solid var(--border);background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,var(--surface)),var(--surface));align-content:start}
+.shelf .feat h2{grid-column:1/-1;font:700 26px/1.05 var(--title);letter-spacing:-.01em}
+.shelf .feat h2 small{display:block;font:600 11px var(--mono);letter-spacing:.14em;color:var(--muted);margin-top:6px;text-transform:uppercase}
+.prog{grid-column:1/-1;display:grid;gap:6px}
+.prog .segs{display:flex;gap:3px}.prog .segs i{flex:1;height:6px;border-radius:3px;background:var(--raised)}
+.prog .segs i.seen{background:var(--mint)}.prog .segs i.best{background:var(--accent)}
+.prog span{font-size:12px;color:var(--muted)}.prog b{color:var(--text)}
+.shelf .feat .bm{display:grid;gap:6px;align-content:start}.shelf .feat .bm b{font:600 17px/1.2 var(--title)}
+.shelf .strip{padding:20px 20px 6px 0;min-width:0}
+.shelf .strip .row{padding-bottom:10px}.shelf .fc{flex-basis:112px}
+.shelf .fc.best .poster{border-color:var(--accent-text);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 40%,transparent),var(--shadow)}
+.fc.seen .poster{filter:saturate(.55) brightness(.8)}
+.fc.seen:hover .poster{filter:none}
+.tag{position:absolute;top:6px;left:6px;z-index:3;font:700 10px var(--mono);letter-spacing:.06em;padding:3px 6px;border-radius:5px;display:inline-flex;gap:4px;align-items:center;background:rgba(11,13,23,.88);color:#ECE9E3;border:1px solid rgba(255,255,255,.18)}
+.tag.rated{color:var(--accent)}.tag.seen{color:var(--mint)}
+.tag.best{background:var(--btn-bg);color:var(--btn-fg);border-color:transparent}
+.pct{font:600 12px var(--mono);color:var(--accent-text)}
+.mine{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}.mine .stars{font-size:12px}
+.hidden{display:none!important}
+.note{color:var(--muted);font-size:13px;text-align:center;padding:18px 0 4px;border-top:1px solid var(--border);margin-top:22px}
+@media (max-width:980px){.shelf{grid-template-columns:1fr}.shelf .feat{border-right:0;border-bottom:1px solid var(--border)}.shelf .strip{padding:0 20px 6px}}
+</style></head>
+<body data-page="fr">
+<main class="wrap">
+ <div class="pagehead"><p class="eyebrow">Series · grouped for you</p><h1>Franchises</h1>
+  <p>Your best match in each series comes first. Everything else in that franchise is one click away, so you can start anywhere. Films you have already seen stay on the shelf, marked with your own rating.</p></div>
+ <div class="tools"><span class="label">Show</span><button class="chip sel" type="button" data-f="all" aria-pressed="true">All films</button><button class="chip" type="button" data-f="unseen" aria-pressed="false">Unseen only</button><button class="chip" type="button" data-f="seen" aria-pressed="false">Seen only</button><span style="margin-left:auto;color:var(--muted);font-size:13px" id="tot"></span></div>
+ <div id="shelves"></div>
+ <p class="note">Only franchises with two or more films in your matches are grouped. 11 of your top 100 matches belong to none.</p>
+ <div class="legend"><span><span class="tag best" style="position:static">BEST</span>&nbsp;your best unseen match</span><span><span class="tag rated" style="position:static">★ 4.5</span>&nbsp;seen and rated by you</span><span><span class="tag seen" style="position:static">✓ SEEN</span>&nbsp;seen, no rating</span><span>Seen films are dimmed and show your rating instead of a match</span></div>
+</main>
+<script src="mock-08-shared.js"></script>
+<script>
+(function(){
+const {$,$$,poster,gauge,ov,stars}=PP;
+// [title, year, hue, match, myRating]  myRating: undefined = unseen, 0 = seen unrated, 0.5-5 = rated
+const F=[
+ {n:'Mission: Impossible',films:[['Mission: Impossible',1996,200,48,3.5],['Mission: Impossible II',2000,20,41],['Mission: Impossible III',2006,350,45],['Ghost Protocol',2011,35,52,4],['Rogue Nation',2015,160,54],['Fallout',2018,12,58],['Dead Reckoning',2023,260,52,0]]},
+ {n:'John Wick',films:[['John Wick',2014,215,54,4.5],['Chapter 2',2017,330,53,4],['Chapter 3 – Parabellum',2019,5,54],['Chapter 4',2023,280,56]]},
+ {n:'The Dark Knight',films:[['Batman Begins',2005,230,53,4],['The Dark Knight',2008,215,57,5],['The Dark Knight Rises',2012,175,53]]},
+ {n:'Alien',films:[['Alien',1979,140,55,5],['Aliens',1986,10,56],['Alien³',1992,50,43],['Alien Resurrection',1997,100,40,2],['Prometheus',2012,190,47,0],['Alien: Covenant',2017,330,44]]},
+ {n:'Mad Max',films:[['Mad Max',1979,30,42],['The Road Warrior',1981,22,49],['Fury Road',2015,18,55,4.5],['Furiosa',2024,40,51]]}
+];
+const seen=x=>x[4]!==undefined,yrs=f=>f.films[0][1]+'–'+f.films[f.films.length-1][1];
+F.forEach(f=>{const u=f.films.filter(x=>!seen(x));f.best=u.length?f.films.indexOf(u.reduce((a,x)=>x[3]>a[3]?x:a)):-1});
+let filter='all';
+function tagOf(x,isBest){if(isBest)return '<span class="tag best">BEST '+x[3]+'</span>';if(!seen(x))return '';return x[4]>0?'<span class="tag rated">★ '+x[4]+'</span>':'<span class="tag seen">✓ SEEN</span>'}
+function render(){
+ let shown=0,total=0;
+ $('#shelves').innerHTML=F.map(f=>{
+  const nSeen=f.films.filter(seen).length,b=f.best>=0?f.films[f.best]:null;
+  const films=f.films.map((x,i)=>({x,i})).filter(({x})=>filter==='all'||(filter==='seen')===seen(x));
+  total+=f.films.length;shown+=films.length;if(!films.length)return '';
+  const feat=b?'<div>'+poster(b[0],b[2])+'</div><div class="bm"><span class="eyebrow">Best match · unseen</span><b>'+b[0]+'</b><span style="color:var(--muted);font-size:13px">'+b[1]+' · TMDB 7.'+(b[3]%10)+'</span>'+gauge(b[3])+'<button class="btn primary" style="padding:9px 12px;font-size:13px;margin-top:4px" type="button">+ Watchlist</button></div>':'<div class="bm" style="grid-column:1/-1"><span class="eyebrow" style="color:var(--mint)">Completed</span><b>You have seen all '+f.films.length+'.</b></div>';
+  return '<article class="panel shelf"><div class="feat"><h2>'+f.n+'<small>'+f.films.length+' films · '+yrs(f)+'</small></h2><div class="prog"><div class="segs" role="img" aria-label="'+nSeen+' of '+f.films.length+' seen">'+f.films.map((x,i)=>'<i class="'+(i===f.best?'best':seen(x)?'seen':'')+'"></i>').join('')+'</div><span><b>'+nSeen+' of '+f.films.length+'</b> seen · '+(f.films.length-nSeen)+' to go</span></div>'+feat+'</div><div class="strip"><p class="label" style="margin-bottom:10px">In this franchise · release order</p><div class="row">'+films.map(({x,i})=>'<figure class="fc'+(i===f.best?' best':'')+(seen(x)?' seen':'')+'"><div class="pw">'+tagOf(x,i===f.best)+poster(x[0],x[2],'sm')+(seen(x)?'<div class="ov"><button class="mini" type="button">Edit rating</button><button class="mini" type="button">Rewatch next</button></div>':ov)+'</div><figcaption><b>'+x[0]+'</b><small>'+x[1]+'</small>'+(seen(x)?'<span class="mine">You rated '+(x[4]>0?stars(x[4]):'—')+'</span>':'<span class="pct">score '+x[3]+'</span>')+'</figcaption></figure>').join('')+'</div></div></article>'}).join('');
+ $('#tot').textContent=shown+' of '+total+' films shown';
+}
+$$('[data-f]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.f;$$('[data-f]').forEach(x=>{x.setAttribute('aria-pressed',x===b);x.classList.toggle('sel',x===b)});render()}));
+render();
+})();
+</script>
+</body></html>

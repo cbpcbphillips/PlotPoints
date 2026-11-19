@@ -13,9 +13,9 @@ export function tmdbWatchUrl(id: number): string {
   return `https://www.themoviedb.org/movie/${id}/watch?locale=US`
 }
 
-/** Six tones for the title-on-color tiles; stable per film so a tile never changes between visits. */
-export function toneOf(id: number): number {
-  return Math.abs(id) % 6
+/** Hue (0-359) of a film's placeholder poster; stable per film so it never changes between visits. */
+export function hueOf(id: number): number {
+  return (Math.abs(id) * 47) % 360
 }
 
 export function prettyDate(iso: string): string {

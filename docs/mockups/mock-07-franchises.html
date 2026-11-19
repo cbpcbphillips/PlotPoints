@@ -33,40 +33,38 @@
 </style></head>
 <body data-page="fr">
 <main class="wrap">
- <div class="pagehead"><p class="eyebrow">Series · grouped for you</p><h1>Franchises</h1>
-  <p>Your best match in each series comes first. Everything else in that franchise is one click away, so you can start anywhere. Films you have already seen stay on the shelf, marked with your own rating.</p></div>
- <div class="tools"><span class="label">Show</span><button class="chip sel" type="button" data-f="all" aria-pressed="true">All films</button><button class="chip" type="button" data-f="unseen" aria-pressed="false">Unseen only</button><button class="chip" type="button" data-f="seen" aria-pressed="false">Seen only</button><span style="margin-left:auto;color:var(--muted);font-size:13px" id="tot"></span></div>
+ <div class="pagehead"><p class="eyebrow">Your top 5 franchises</p><h1>Franchises</h1></div>
+ <div class="tools"><span class="label">Show</span><button class="chip sel" type="button" data-f="all" aria-pressed="true">All films</button><button class="chip" type="button" data-f="unseen" aria-pressed="false">Unseen only</button><button class="chip" type="button" data-f="seen" aria-pressed="false">Seen only</button><span class="label" style="margin-left:14px">Order</span><button class="chip sel" type="button" data-o="year" aria-pressed="true">Release</button><button class="chip" type="button" data-o="score" aria-pressed="false">Score</button><span style="margin-left:auto;color:var(--muted);font-size:13px" id="tot"></span></div>
  <div id="shelves"></div>
- <p class="note">Only franchises with two or more films in your matches are grouped. 11 of your top 100 matches belong to none.</p>
- <div class="legend"><span><span class="tag best" style="position:static">BEST</span>&nbsp;your best unseen match</span><span><span class="tag rated" style="position:static">★ 4.5</span>&nbsp;seen and rated by you</span><span><span class="tag seen" style="position:static">✓ SEEN</span>&nbsp;seen, no rating</span><span>Seen films are dimmed and show your rating instead of a match</span></div>
 </main>
 <script src="mock-07-shared.js"></script>
 <script>
 (function(){
 const {$,$$,poster,gauge,ov,stars}=PP;
-// [title, year, hue, match, myRating]  myRating: undefined = unseen, 0 = seen unrated, 0.5-5 = rated
+// [title, year, hue, match, myRating, tmdbRating, rankingScore]  myRating: undefined = unseen, 0 = seen unrated, 0.5-5 = rated
 const F=[
- {n:'Mission: Impossible',films:[['Mission: Impossible',1996,200,71,3.5],['Mission: Impossible II',2000,20,58],['Mission: Impossible III',2006,350,66],['Ghost Protocol',2011,35,79,4],['Rogue Nation',2015,160,83],['Fallout',2018,12,92],['Dead Reckoning',2023,260,80,0]]},
- {n:'John Wick',films:[['John Wick',2014,215,84,4.5],['Chapter 2',2017,330,81,4],['Chapter 3 – Parabellum',2019,5,83],['Chapter 4',2023,280,88]]},
- {n:'The Dark Knight',films:[['Batman Begins',2005,230,82,4],['The Dark Knight',2008,215,90,5],['The Dark Knight Rises',2012,175,81]]},
- {n:'Alien',films:[['Alien',1979,140,85,5],['Aliens',1986,10,87],['Alien³',1992,50,62],['Alien Resurrection',1997,100,55,2],['Prometheus',2012,190,70,0],['Alien: Covenant',2017,330,64]]},
- {n:'Mad Max',films:[['Mad Max',1979,30,60],['The Road Warrior',1981,22,74],['Fury Road',2015,18,85,4.5],['Furiosa',2024,40,78]]}
+ {n:"Spider-Man",films:[["Spider-Man",2002,259,61,undefined,7.4,3.1],["Spider-Man 2",2004,306,56,undefined,7.3,2.6],["Spider-Man 3",2007,353,55,undefined,6.5,2.0],["The Amazing Spider-Man",2012,350,57,undefined,6.8,2.2],["The Amazing Spider-Man 2",2014,194,55,undefined,6.6,2.0],["Spider-Man: Homecoming",2017,325,0,4.0,7.3,0],["Spider-Man: Into the Spider-Verse",2018,319,0,5.0,8.4,0],["Spider-Man: Far From Home",2019,319,61,undefined,7.4,3.1],["Spider-Man: No Way Home",2021,343,64,undefined,7.9,3.8],["Spider-Man: Across the Spider-Verse",2023,138,62,undefined,8.4,4.2],["Spider-Man: Brand New Day",2026,87,0,4.5,7.9,0]]},
+ {n:"Marvel Cinematic Universe",films:[["Iron Man",2008,122,53,undefined,7.7,2.4],["The Avengers",2012,76,52,undefined,8.1,2.5],["Guardians of the Galaxy",2014,340,51,undefined,7.9,2.7],["Captain America: The Winter Soldier",2014,14,50,undefined,7.7,2.1],["Guardians of the Galaxy Vol. 2",2017,45,48,undefined,7.6,2.0],["Thor: Ragnarok",2017,251,50,undefined,7.6,2.0],["Avengers: Infinity War",2018,32,54,undefined,8.2,3.0],["Avengers: Endgame",2019,298,51,undefined,8.2,2.6]]},
+ {n:"X-Men",films:[["X-Men",2000,279,49,undefined,7.0,1.8],["X-Men: First Class",2011,166,45,undefined,7.3,1.6],["X-Men: Days of Future Past",2014,335,50,undefined,7.5,2.0],["Deadpool",2016,340,48,undefined,7.6,1.8],["X-Men: Apocalypse",2016,65,48,undefined,6.5,1.4],["Logan",2017,45,54,undefined,7.8,2.6],["Deadpool 2",2018,286,49,undefined,7.5,1.8],["Deadpool & Wolverine",2024,345,48,undefined,7.6,1.8]]},
+ {n:"Blade Runner",films:[["Blade Runner",1982,66,48,undefined,7.9,2.2],["Blade Runner 2049",2017,208,50,undefined,7.6,2.3]]},
+ {n:"The Maze Runner",films:[["The Maze Runner",2014,201,50,undefined,7.2,2.1],["Maze Runner: The Death Cure",2018,261,47,undefined,7.1,1.5]]}
 ];
 const seen=x=>x[4]!==undefined,yrs=f=>f.films[0][1]+'–'+f.films[f.films.length-1][1];
-F.forEach(f=>{const u=f.films.filter(x=>!seen(x));f.best=u.length?f.films.indexOf(u.reduce((a,x)=>x[3]>a[3]?x:a)):-1});
-let filter='all';
+F.forEach(f=>{const u=f.films.filter(x=>!seen(x));f.best=u.length?f.films.indexOf(u.reduce((a,x)=>x[6]>a[6]?x:a)):-1});
+let filter='all',order='year';
 function tagOf(x,isBest){if(isBest)return '<span class="tag best">BEST '+x[3]+'%</span>';if(!seen(x))return '';return x[4]>0?'<span class="tag rated">★ '+x[4]+'</span>':'<span class="tag seen">✓ SEEN</span>'}
 function render(){
  let shown=0,total=0;
  $('#shelves').innerHTML=F.map(f=>{
   const nSeen=f.films.filter(seen).length,b=f.best>=0?f.films[f.best]:null;
-  const films=f.films.map((x,i)=>({x,i})).filter(({x})=>filter==='all'||(filter==='seen')===seen(x));
+  const films=f.films.map((x,i)=>({x,i})).filter(({x})=>filter==='all'||(filter==='seen')===seen(x)).sort(order==='score'?(a,b)=>(b.x[6]-a.x[6])||((b.x[4]||0)-(a.x[4]||0)):(a,b)=>a.i-b.i);
   total+=f.films.length;shown+=films.length;if(!films.length)return '';
-  const feat=b?'<div>'+poster(b[0],b[2])+'</div><div class="bm"><span class="eyebrow">Best match · unseen</span><b>'+b[0]+'</b><span style="color:var(--muted);font-size:13px">'+b[1]+' · TMDB 7.'+(b[3]%10)+'</span>'+gauge(b[3],44)+'<button class="btn primary" style="padding:9px 12px;font-size:13px;margin-top:4px" type="button">+ Watchlist</button></div>':'<div class="bm" style="grid-column:1/-1"><span class="eyebrow" style="color:var(--mint)">Completed</span><b>You have seen all '+f.films.length+'.</b></div>';
-  return '<article class="panel shelf"><div class="feat"><h2>'+f.n+'<small>'+f.films.length+' films · '+yrs(f)+'</small></h2><div class="prog"><div class="segs" role="img" aria-label="'+nSeen+' of '+f.films.length+' seen">'+f.films.map((x,i)=>'<i class="'+(i===f.best?'best':seen(x)?'seen':'')+'"></i>').join('')+'</div><span><b>'+nSeen+' of '+f.films.length+'</b> seen · '+(f.films.length-nSeen)+' to go</span></div>'+feat+'</div><div class="strip"><p class="label" style="margin-bottom:10px">In this franchise · release order</p><div class="row">'+films.map(({x,i})=>'<figure class="fc'+(i===f.best?' best':'')+(seen(x)?' seen':'')+'"><div class="pw">'+tagOf(x,i===f.best)+poster(x[0],x[2],'sm')+(seen(x)?'<div class="ov"><button class="mini" type="button">Edit rating</button><button class="mini" type="button">Rewatch next</button></div>':ov)+'</div><figcaption><b>'+x[0]+'</b><small>'+x[1]+'</small>'+(seen(x)?'<span class="mine">You rated '+(x[4]>0?stars(x[4]):'—')+'</span>':'<span class="pct">'+x[3]+'% match</span>')+'</figcaption></figure>').join('')+'</div></div></article>'}).join('');
+  const feat=b?'<div>'+poster(b[0],b[2])+'</div><div class="bm"><span class="eyebrow">Best match · unseen</span><b>'+b[0]+'</b><span style="color:var(--muted);font-size:13px">'+b[1]+' · TMDB '+b[5]+'</span>'+gauge(b[6])+'<button class="btn primary" style="padding:9px 12px;font-size:13px;margin-top:4px" type="button">+ Watchlist</button></div>':'<div class="bm" style="grid-column:1/-1"><span class="eyebrow" style="color:var(--mint)">Completed</span><b>You have seen all '+f.films.length+'.</b></div>';
+  return '<article class="panel shelf"><div class="feat"><h2>'+f.n+'<small>'+f.films.length+' films · '+yrs(f)+'</small></h2><div class="prog"><div class="segs" role="img" aria-label="'+nSeen+' of '+f.films.length+' seen">'+f.films.map((x,i)=>'<i class="'+(i===f.best?'best':seen(x)?'seen':'')+'"></i>').join('')+'</div><span><b>'+nSeen+' of '+f.films.length+'</b> seen · '+(f.films.length-nSeen)+' to go</span></div>'+feat+'</div><div class="strip"><p class="label" style="margin-bottom:10px">In this franchise · '+(order==='score'?'ranked by score':'release order')+'</p><div class="row">'+films.map(({x,i})=>'<figure class="fc'+(i===f.best?' best':'')+(seen(x)?' seen':'')+'"><div class="pw">'+tagOf(x,i===f.best)+poster(x[0],x[2],'sm')+(seen(x)?'<div class="ov"><button class="mini" type="button">Edit rating</button><button class="mini" type="button">Rewatch next</button></div>':ov)+'</div><figcaption><b>'+x[0]+'</b><small>'+x[1]+'</small>'+(seen(x)?'<span class="mine">You rated '+(x[4]>0?stars(x[4]):'—')+'</span>':'<span class="pct">'+x[3]+'% match</span>')+'</figcaption></figure>').join('')+'</div></div></article>'}).join('');
  $('#tot').textContent=shown+' of '+total+' films shown';
 }
 $$('[data-f]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.f;$$('[data-f]').forEach(x=>{x.setAttribute('aria-pressed',x===b);x.classList.toggle('sel',x===b)});render()}));
+$$('[data-o]').forEach(b=>b.addEventListener('click',()=>{order=b.dataset.o;$$('[data-o]').forEach(x=>{x.setAttribute('aria-pressed',x===b);x.classList.toggle('sel',x===b)});render()}));
 render();
 })();
 </script>

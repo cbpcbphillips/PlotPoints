@@ -20,8 +20,8 @@
   const PP = window.PP = { $, $$ };
   PP.stars = n => '<span class="stars" role="img" aria-label="' + n + ' out of 5">' + [1, 2, 3, 4, 5].map(i => n >= i ? '★' : '<span class="off">★</span>').join('') + '</span>';
   PP.poster = (t, h, cls) => '<div class="poster ' + (cls || '') + '" style="--h:' + h + '" role="img" aria-label="Placeholder poster for ' + t + '"><span>' + t + '</span></div>';
-  PP.gauge = (pct, size) => '<div class="gauge"><svg viewBox="0 0 48 48" aria-hidden="true"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '><circle class="trk" cx="24" cy="24" r="22"/><circle class="val" cx="24" cy="24" r="22" stroke-dasharray="' + (138.2 * pct / 100).toFixed(1) + ' 138.2"/></svg><div><b>' + pct + '%</b></div></div>';
-  PP.dots = (a, b, c, show) => '<span class="dots" title="Taste ' + a + ', novelty ' + b + ', critics ' + c + '"><i style="--v:' + a / 100 + '"></i><i style="--v:' + b / 100 + '"></i><i style="--v:' + c / 100 + '"></i>' + (show === false ? '' : '<span>' + a + '%</span>') + '</span>';
+  PP.gauge = s => '<div class="gauge"><b>' + s + '</b><small>score</small></div>';
+  PP.dots = (a, b, c, show) => '<span class="dots" title="Match ' + a + '%, novelty ' + b + ', TMDB rating ' + (c / 10).toFixed(1) + '"><i style="--v:' + a / 100 + '"></i><i style="--v:' + b / 100 + '"></i><i style="--v:' + c / 100 + '"></i>' + (show === false ? '' : '<span>' + a + '%</span>') + '</span>';
   PP.ov = '<div class="ov"><button class="mini" type="button">+ Watchlist</button><button class="mini" type="button">Seen it</button><button class="mini" type="button">Not interested</button></div>';
 
   /* Layout switcher: <div class="switch" data-group="x" data-descs='["...","..."]'> ; panels have data-group + data-layout="A|B|C" */
@@ -44,7 +44,7 @@
     set(h >= 0 && h < labels.length ? h : 0);
     return set;
   };
-  PP.foot = '<footer class="foot"><div class="wrap"><p>This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming data via JustWatch, US only.</p><p>PlotPoints mock-up · 07 Combined · invented sample data, no live APIs.</p></div></footer>';
+  PP.foot = '';
   document.addEventListener('DOMContentLoaded', () => document.body.insertAdjacentHTML('beforeend', PP.foot));
   if (document.readyState !== 'loading') document.body.insertAdjacentHTML('beforeend', PP.foot);
 })();

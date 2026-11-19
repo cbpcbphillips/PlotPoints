@@ -1,10 +1,171 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { Poster } from '../components/Poster'
 import { Shell } from '../components/Shell'
-import { ErrorNote, Loading, PageTitle } from '../components/States'
-import { Match, Tile } from '../components/Tile'
+import { Gauge, Stars } from '../components/Signals'
+import { ErrorNote, Loading } from '../components/States'
 import { api } from '../lib/api'
 import { effectiveFilms, useProfile, type Profile } from '../lib/profile'
+import type { FranchiseGroup } from '../lib/types'
+
+/** One film on a shelf: either a recommendation (unseen) or one the person has already seen. */
+interface Entry {
+  id: number
+  key: string
+  title: string
+  year: number | null
+  seen: boolean
+  rating: number | null
+  match: number | null
+  score: number | null
+  tmdb: number | null
+  best: boolean
+}
+
+type Show = 'all' | 'unseen' | 'seen'
+type Order = 'year' | 'score'
+
+export function entriesOf(f: FranchiseGroup): Entry[] {
+  const unseen: Entry[] = [f.best, ...f.others].map((r, i) => ({
+    id: r.tmdb_id,
+    key: r.media_key,
+    title: r.title,
+    year: r.year,
+    seen: false,
+    rating: null,
+    match: r.match,
+    score: r.score,
+    tmdb: r.tmdb_rating,
+    best: i === 0,
+  }))
+  const seen: Entry[] = f.seen.map((s) => ({
+    id: s.tmdb_id,
+    key: s.media_key,
+    title: s.title,
+    year: s.year,
+    seen: true,
+    rating: s.rating,
+    match: null,
+    score: null,
+    tmdb: s.tmdb_rating,
+    best: false,
+  }))
+  return [...unseen, ...seen]
+}
+
+/** Release order, or by ranking score with unseen films first and seen films by your rating. */
+export function sortEntries(list: Entry[], order: Order): Entry[] {
+  const byYear = (a: Entry, b: Entry) => (a.year ?? 0) - (b.year ?? 0) || a.title.localeCompare(b.title)
+  if (order === 'year') return [...list].sort(byYear)
+  return [...list].sort(
+    (a, b) =>
+      (b.score ?? -Infinity) - (a.score ?? -Infinity) ||
+      (b.rating ?? 0) - (a.rating ?? 0) ||
+      byYear(a, b),
+  )
+}
+
+function Tag({ e }: { e: Entry }) {
+  if (e.best) return <span className="ptag best">BEST {e.match}%</span>
+  if (!e.seen) return null
+  return e.rating ? (
+    <span className="ptag rated">★ {e.rating}</span>
+  ) : (
+    <span className="ptag seen">✓ SEEN</span>
+  )
+}
+
+function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order }) {
+  const all = entriesOf(f)
+  const years = all.map((e) => e.year).filter((y): y is number => y != null)
+  const span = years.length ? `${Math.min(...years)}–${Math.max(...years)}` : ''
+  const seenCount = all.filter((e) => e.seen).length
+  const shown = sortEntries(all, order).filter(
+    (e) => show === 'all' || (show === 'seen') === e.seen,
+  )
+  if (shown.length === 0) return null
+  const best = f.best
+  const byYear = sortEntries(all, 'year')
+
+  return (
+    <article className="panel shelf">
+      <div className="feat">
+        <h2>
+          {f.franchise}
+          <small>
+            {all.length} films · {span}
+          </small>
+        </h2>
+        <div className="prog">
+          <div
+            className="segs"
+            role="img"
+            aria-label={`${seenCount} of ${all.length} seen`}
+          >
+            {byYear.map((e) => (
+              <i key={e.key} className={e.best ? 'best' : e.seen ? 'seen' : ''} />
+            ))}
+          </div>
+          <span>
+            <b>
+              {seenCount} of {all.length}
+            </b>{' '}
+            seen · {all.length - seenCount} to go
+          </span>
+        </div>
+        <div>
+          <Poster id={best.tmdb_id} title={best.title} />
+        </div>
+        <div className="bm">
+          <span className="eyebrow">Best match · unseen</span>
+          <b>{best.title}</b>
+          <span className="text-[13px] text-muted">
+            {best.year}
+            {best.tmdb_rating != null && ` · TMDB ${best.tmdb_rating.toFixed(1)}`}
+          </span>
+          <Gauge score={best.score} />
+        </div>
+      </div>
+      <div className="strip">
+        <p className="label mb-2.5">
+          In this franchise · {order === 'score' ? 'ranked by score' : 'release order'}
+        </p>
+        <div className="row">
+          {shown.map((e) => (
+            <figure key={e.key} className={`fc m-0${e.best ? ' best' : ''}${e.seen ? ' seen' : ''}`}>
+              <div className="pw">
+                <Tag e={e} />
+                <Poster id={e.id} title={e.title} small />
+              </div>
+              <figcaption>
+                <b>{e.title}</b>
+                <small>
+                  {e.year}
+                  {e.tmdb != null && ` · TMDB ${e.tmdb.toFixed(1)}`}
+                </small>
+                {e.seen ? (
+                  e.rating ? (
+                    <div className="mine">
+                      <Stars rating={e.rating} />
+                    </div>
+                  ) : (
+                    <small>seen, not rated</small>
+                  )
+                ) : (
+                  <>
+                    <span className="pct">{e.match}% match</span>
+                    <small>score {e.score?.toFixed(1)}</small>
+                  </>
+                )}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </article>
+  )
+}
 
 export function Franchises() {
   const { profile } = useProfile()
@@ -12,7 +173,19 @@ export function Franchises() {
   return <FranchisesFor profile={profile} />
 }
 
+const SHOWS: [Show, string][] = [
+  ['all', 'All films'],
+  ['unseen', 'Unseen only'],
+  ['seen', 'Seen only'],
+]
+const ORDERS: [Order, string][] = [
+  ['year', 'Release'],
+  ['score', 'Score'],
+]
+
 function FranchisesFor({ profile }: { profile: Profile }) {
+  const [show, setShow] = useState<Show>('all')
+  const [order, setOrder] = useState<Order>('year')
   const q = useQuery({
     queryKey: ['franchises', profile.importedAt, profile.matched, profile.notForMe.join(',')],
     queryFn: () =>
@@ -21,71 +194,47 @@ function FranchisesFor({ profile }: { profile: Profile }) {
 
   return (
     <Shell>
-      <PageTitle title="Franchises">
-        Your best match in each series comes first. Everything else in that franchise is one click
-        away, so you can start anywhere.
-      </PageTitle>
+      <section className="pagehead">
+        <p className="eyebrow m-0">Your top 5 franchises</p>
+        <h1>Franchises</h1>
+      </section>
       {q.isPending && <Loading what="your franchises" />}
       {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
       {q.data && (
-        <section className="pt-6 lg:pt-9">
+        <>
+          <div className="tools">
+            <span className="label">Show</span>
+            {SHOWS.map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className={`chip${show === v ? ' sel' : ''}`}
+                aria-pressed={show === v}
+                onClick={() => setShow(v)}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="label ml-3.5">Order</span>
+            {ORDERS.map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className={`chip${order === v ? ' sel' : ''}`}
+                aria-pressed={order === v}
+                onClick={() => setOrder(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {q.data.franchises.map((f) => (
-            <article
-              key={f.franchise}
-              className="rowp press -mx-5 flex flex-wrap items-center gap-x-10 gap-y-6 rounded-xl border-t border-line px-5 py-8 lg:py-11"
-            >
-              <div className="min-w-0 flex-[1_1_100%] lg:flex-[0_0_230px]">
-                <h2 className="m-0 text-[28px] font-bold leading-[1.05] tracking-[-0.01em] lg:text-4xl">
-                  {f.franchise}
-                </h2>
-                <div className="mt-1.5 text-[17px] text-muted">{f.count} in your matches</div>
-              </div>
-              <Tile
-                id={f.best.tmdb_id}
-                title={f.best.title}
-                className="h-[126px] w-[84px] flex-none rounded-[10px] p-2.5 text-[13.5px]"
-              />
-              <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-1.5">
-                <div className="text-sm font-bold uppercase tracking-[0.16em] text-accent">
-                  Best match
-                </div>
-                <h3 className="m-0 text-2xl font-bold leading-[1.12] lg:text-[28px]">
-                  {f.best.title}
-                </h3>
-                <div className="text-[17px] text-muted">
-                  {f.best.year}
-                  {f.best.tmdb_rating != null && ` · TMDB ${f.best.tmdb_rating.toFixed(1)}`}
-                </div>
-                <div className="pt-1.5">
-                  <Match value={f.best.match} />
-                </div>
-              </div>
-              <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
-                <div className="text-sm font-bold uppercase tracking-[0.16em] text-muted">
-                  Also in this franchise
-                </div>
-                <div className="flex flex-wrap gap-2.5">
-                  {f.others.map((o) => (
-                    <span
-                      key={o.media_key}
-                      className="rounded-lg bg-surface2 px-4 py-2 text-[17px] text-ink"
-                    >
-                      {o.title}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </article>
+            <Shelf key={f.franchise} f={f} show={show} order={order} />
           ))}
           {q.data.franchises.length === 0 && (
-            <p className="py-10 text-center text-lg text-muted">
-              None of your top matches belong to a franchise yet.
-            </p>
+            <p className="empty">None of your top matches belong to a franchise yet.</p>
           )}
-          <div className="border-t border-line pt-7 text-center text-[17px] text-muted">
-            Only franchises with two or more films in your matches are grouped.
-          </div>
-        </section>
+        </>
       )}
     </Shell>
   )

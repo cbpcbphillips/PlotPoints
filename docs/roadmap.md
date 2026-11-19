@@ -418,6 +418,31 @@ only on a synthetic split of it.
    *Inception* and *Avengers: Endgame* appear because the system cannot know they were seen long
    ago. This is the RSS-cap decision again, and it is the biggest limit on how good the output can
    get — a full-history CSV import would improve it more than any scoring change.
+5c. **A "step outside your comfort zone" pick (wanted: a real feature, not built).** Stated
+   requirement: offer the viewer *a good pick outside their typical niche that is still
+   recommended from their taste profile*. It is a deliberate option, not a side effect of
+   diversity, and it should be surfaced as its own recommendation (the 07 mock-ups put it beside
+   the main pick). "Outside the niche" and "from their taste" pull in opposite directions, so the
+   selection has to hold both: far from where the ratings cluster, but still carrying a positive
+   signal from the profile (a mid-similarity film with strong ratings, not a random one). The 07
+   mock fakes it as "best film outside the top franchise"
+   (*Avengers: Infinity War*, overall rank 5 for the VetOW diary), which is only franchise
+   diversity (5a), not a real wildcard. A real one needs its own selection step rather than a
+   tweak to `recommend.py`'s ranking, because the ranking by design returns the nearest films.
+   Candidates, none applied: take the best-scoring title from a *different cluster* of the
+   catalog than the liked films (needs cluster labels in the snapshot); take a mid-similarity
+   film (e.g. cosine 0.35-0.5) that is strongly rated on TMDB; or MMR re-ranking with an explicit
+   "far from the profile" slot. It should be a separate function (and likely its own response
+   field, e.g. `wildcard`) so the main ranking and its tests stay untouched. It also needs a
+   "why" that does not claim similarity to the liked films.
+5d. **A novelty signal (wanted in the frontend, not in the API).** The 07 mock-ups show a third
+   dot, Novelty, beside Match and TMDB rating. The API exposes no such value, so the mock computes
+   it as `100 - match` of the closest film the viewer rated (hero: 77% closest, novelty 23; the
+   reel sits at 39-50). That is a stand-in, not a decision. Open: define it properly (distance
+   from the nearest *seen* film vs. distance from the whole profile vs. obscurity from vote
+   count; vote count was tried and reads near 0 for every blockbuster, so it separates nothing)
+   and add it to `present()` as its own field. It is display-only and must not enter the ranking
+   score. It also pairs naturally with the 5c wildcard, which is the same idea used as a selector.
 6. **Presenting more than one taste (deferred).** Clustering a user's liked films into groups
    ("your slashers / your sci-fi") would organize the *output*; the scoring doesn't need it, since
    it never averages. It needs roughly 30+ rated films, which the ~50-entry RSS cap makes marginal.

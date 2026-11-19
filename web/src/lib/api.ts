@@ -5,6 +5,7 @@ import type {
   ImportedFilm,
   MatchedFilm,
   Meta,
+  ProfileStats,
   RecommendResponse,
 } from './types'
 
@@ -67,6 +68,7 @@ export const api = {
       ambiguous: number
     }>('/match', { rows }),
   recommend: (body: RecommendBody) => post<RecommendResponse>('/recommend', body),
+  profile: (films: Film[]) => post<ProfileStats>('/profile', { films }),
   franchises: (body: RecommendBody) =>
     post<{ franchises: FranchiseGroup[]; unmatched_films: number }>('/franchises', body),
   consent: (body: {

@@ -223,3 +223,70 @@ def test_provider_filter_reports_overall_rank_and_pool_stats(client):
     assert all(o >= k for o, k in zip(overall, ranks, strict=True))  # never better than overall
     unfiltered = client.post("/recommend", json=body(1000, 1001, limit=5)).json()
     assert "overall_rank" not in unfiltered["results"][0]
+
+
+def test_results_carry_the_ranking_score_and_a_novelty_standin(client):
+    top = client.post("/recommend", json=body(1000, 1001, 1002)).json()["results"]
+    assert all(isinstance(x["score"], float) for x in top)
+    assert [x["score"] for x in top] == sorted((x["score"] for x in top), reverse=True)
+    first = top[0]
+    # novelty is 100 minus the closest explaining film's cosine, so it is derived from `because`
+    assert first["novelty"] == 100 - first["members"][0]["because"][0]["match"]
+    assert first["score"] != first["match"]  # the score is not the percentage
+
+
+def test_enjoyed_row_only_on_the_first_unfiltered_page(client):
+    r = client.post("/recommend", json=body(1000, 1001, 1020, limit=20)).json()
+    assert r["enjoyed"] and len(r["enjoyed"]) <= 6
+    assert {"tmdb_id", "title", "rating", "avg_match"} <= set(r["enjoyed"][0])
+    assert {e["tmdb_id"] for e in r["enjoyed"]} <= {1000, 1001, 1020}
+    assert client.post("/recommend", json=body(1000, offset=5)).json()["enjoyed"] is None
+    assert (
+        client.post("/recommend", json=body(1000, providers=["Netflix"])).json()["enjoyed"] is None
+    )
+    group = {
+        "members": [
+            {"name": "a", "films": films(1000, 1001)},
+            {"name": "b", "films": films(1020, 1021)},
+        ]
+    }
+    assert client.post("/recommend", json=group).json()["enjoyed"] is None
+
+
+def test_franchises_are_capped_at_five_and_list_seen_films(client):
+    s = client.app.state.snap
+    names = ["F1", "F2", "F3", "F4", "F5", "F6"]
+    for n, name in enumerate(names):  # six franchises of three A titles each (rows 3.. skip A03)
+        for i in range(4 + 3 * n, 7 + 3 * n):
+            s.franchise[i] = name
+    s.franchise[0] = "F1"  # a watched film that belongs to F1
+    r = client.post("/franchises", json=body(1000, 1001)).json()
+    assert len(r["franchises"]) == 5
+    f1 = next((g for g in r["franchises"] if g["franchise"] == "F1"), None)
+    if f1:
+        assert [x["tmdb_id"] for x in f1["seen"]] == [1000]
+        assert f1["seen"][0]["rating"] == 4.5
+    assert all(len(g["others"]) <= 7 for g in r["franchises"])
+
+
+def test_profile_stats(client):
+    s = client.app.state.snap
+    s.genres[0] = ["Drama", "Crime"]
+    s.genres[1] = ["Drama"]
+    s.franchise[0] = s.franchise[1] = "Alpha"
+    payload = {
+        "films": [
+            {"tmdb_id": 1000, "rating": 5},
+            {"tmdb_id": 1001, "rating": 3.5},
+            {"tmdb_id": 1002},
+            {"tmdb_id": 999999, "rating": 4},
+        ]
+    }
+    r = client.post("/profile", json=payload).json()
+    assert (r["films"], r["rated"], r["in_catalog"], r["not_in_catalog"]) == (4, 3, 3, 1)
+    assert r["average_rating"] == 4.17
+    assert {h["rating"]: h["count"] for h in r["histogram"]}[5.0] == 1
+    assert r["genres"][0] == {"name": "Drama", "count": 2, "share": 67}
+    assert r["eras"] == [{"name": "2000s", "count": 3, "share": 100}]
+    assert r["top_series"] == {"name": "Alpha", "count": 2}
+    assert r["five_star"] == ["A00"] and r["average_runtime"] == 110

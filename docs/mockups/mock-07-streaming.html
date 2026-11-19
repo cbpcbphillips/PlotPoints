@@ -63,48 +63,195 @@
 .stile .nums{display:flex;gap:18px;font-size:12px;color:var(--muted)}.stile .nums b{display:block;font:600 18px var(--mono);color:var(--text)}
 .detail{margin-top:22px}
 @media (max-width:980px){.tn,.deck,.pick{grid-template-columns:1fr}.card{grid-template-columns:130px 1fr}.stack{height:420px}.card h2{font-size:26px}}
+.svc{gap:8px}
+.svc button{display:inline-flex;align-items:center;gap:9px;padding:6px 6px 6px 16px;border-radius:999px;font:600 14px var(--display)}
+.svc button .n{min-width:26px;padding:3px 8px;border-radius:999px;background:var(--raised);font:600 12px var(--mono);color:var(--muted);text-align:center}
+.svc button.none{opacity:.55}
+.svc button[aria-pressed="true"]{background:var(--btn-bg);border-color:var(--btn-bg);color:var(--btn-fg);padding-left:12px}
+.svc button[aria-pressed="true"]::before{content:"\2713";font-weight:700}
+.svc button[aria-pressed="true"] .n{background:rgba(0,0,0,.2);color:var(--btn-fg)}
+.svc button{padding:8px 16px}.svc button[aria-pressed="true"]{padding-left:12px}
 </style></head>
 <body data-page="st">
 <main class="wrap">
- <div class="pagehead"><p class="eyebrow">What you can watch tonight</p><h1>Streaming</h1>
-  <p>Choose the services you pay for. We rank only what is on them, so your top pick is always something you can press play on.</p></div>
+ <div class="pagehead"><p class="eyebrow">What you can watch tonight</p><h1>Streaming</h1></div>
  <div class="svc" id="svc" role="group" aria-label="Your streaming services"></div>
  <div><div class="deck"><div><div class="stack" id="stack"></div></div><aside class="panel queue" id="queue"></aside></div></div>
- <p style="text-align:center;color:var(--muted);font-size:13px;padding-top:26px">Streaming data from JustWatch · United States only · availability as of Nov 16, 2026</p>
- <div class="legend"><span><i style="background:var(--coral)"></i>Taste match</span><span><i style="background:var(--mint)"></i>Novelty</span><span><i style="background:var(--sky)"></i>Critical reception</span><span>"Overall #N" = rank among all your matches, before the service filter</span></div>
 </main>
 <script src="mock-07-shared.js"></script>
 <script>
 (function(){
 const {$,$$,poster,gauge,dots,ov}=PP;
-const S=[['Netflix','N',355],['Max','M',265],['Prime Video','P',205],['Disney+','D',225],['Hulu','H',140],['Apple TV+','A',0],['Paramount+','P',215],['Peacock','P',45],['Criterion Channel','C',30],['Mubi','M',320],['Tubi','T',15]];
+const S=[['Disney+','D',10],['Max','M',63],['Paramount+','P',116],['Netflix','N',169],['Peacock','P',222],['Prime Video','P',275],['AMC+','A',328],['AMC','A',21],['Starz','S',74]];
 const sh={};S.forEach(s=>sh[s[0]]=s);
-// title, year, hue, match, overall, services, runtime, director, novelty, critics, genre
+// title, year, hue, match, overall, services, runtime, genres, novelty, tmdb, genre, score
 const M=[
- ['Burning',2018,32,92,1,['Netflix','Criterion Channel'],148,'Lee Chang-dong',61,88,'Mystery'],
- ['Memories of Murder',2003,20,90,2,['Max','Criterion Channel'],132,'Bong Joon-ho',48,92,'Crime'],
- ['The Handmaiden',2016,330,88,3,['Prime Video','Mubi'],145,'Park Chan-wook',55,92,'Thriller'],
- ['Prisoners',2013,210,86,5,['Netflix','Hulu'],153,'Denis Villeneuve',38,82,'Thriller'],
- ['Nightcrawler',2014,260,83,8,['Netflix','Max'],117,'Dan Gilroy',40,90,'Thriller'],
- ['Cure',1997,190,82,9,['Criterion Channel','Mubi'],111,'Kiyoshi Kurosawa',72,84,'Horror'],
- ['Gone Girl',2014,90,81,12,['Max','Hulu'],149,'David Fincher',35,86,'Thriller'],
- ['Zodiac',2007,60,80,14,['Max','Paramount+'],157,'David Fincher',42,89,'Crime'],
- ['Sicario',2015,15,79,16,['Netflix','Prime Video'],121,'Denis Villeneuve',33,87,'Crime'],
- ['Mother',2009,280,78,19,['Max','Mubi'],129,'Bong Joon-ho',60,87,'Mystery'],
- ['Decision to Leave',2022,170,77,21,['Mubi','Prime Video'],138,'Park Chan-wook',58,88,'Mystery'],
- ['Se7en',1995,40,76,24,['Netflix','Max'],127,'David Fincher',30,91,'Crime'],
- ['Whiplash',2014,45,75,27,['Netflix'],107,'Damien Chazelle',28,93,'Drama'],
- ['Hunt for the Wilderpeople',2016,120,72,31,['Hulu','Max'],101,'Taika Waititi',66,85,'Comedy'],
- ['Moon',2009,240,71,36,['Prime Video'],97,'Duncan Jones',70,84,'Sci-fi'],
- ['Arrival',2016,200,70,40,['Paramount+','Netflix'],116,'Denis Villeneuve',44,88,'Sci-fi']
+ ["Spider-Man: Across the Spider-Verse",2023,138,62,1,["Disney+","Max"],140,"Action, Adventure",23,8.4,"Action",4.2],
+ ["Spider-Man: No Way Home",2021,343,64,2,["Disney+","Starz"],148,"Action, Adventure",41,7.9,"Action",3.8],
+ ["Spider-Man",2002,259,61,3,["Disney+"],121,"Action, Science Fiction",39,7.4,"Action",3.1],
+ ["Spider-Man: Far From Home",2019,319,61,4,["Disney+"],129,"Action, Adventure",43,7.4,"Action",3.1],
+ ["Avengers: Infinity War",2018,32,54,5,["Disney+"],149,"Action, Adventure",43,8.2,"Action",3.0],
+ ["Guardians of the Galaxy",2014,340,51,6,["Disney+"],121,"Action, Adventure",42,7.9,"Action",2.7],
+ ["Spider-Man 2",2004,306,56,7,["Disney+"],127,"Action, Adventure",45,7.3,"Action",2.6],
+ ["Logan",2017,45,54,8,["Disney+"],137,"Action, Drama",50,7.8,"Action",2.6],
+ ["Avengers: Endgame",2019,298,51,9,["Disney+"],181,"Action, Adventure",50,8.2,"Action",2.6],
+ ["The Avengers",2012,76,52,10,["Disney+"],143,"Action, Adventure",51,8.1,"Action",2.5],
+ ["Iron Man",2008,122,53,11,["Disney+"],126,"Action, Adventure",49,7.7,"Action",2.4],
+ ["Blade Runner 2049",2017,208,50,1,["Paramount+","Prime Video"],164,"Drama, Science Fiction",50,7.6,"Drama",2.3],
+ ["The Amazing Spider-Man",2012,350,57,12,["Disney+"],136,"Action, Adventure",43,6.8,"Action",2.2],
+ ["Aquaman",2018,254,54,2,["Max"],143,"Action, Adventure",43,6.9,"Action",2.2],
+ ["Venom",2018,161,55,13,["Disney+"],112,"Action, Science Fiction",43,6.8,"Action",2.1],
+ ["Captain America: The Winter Soldier",2014,14,50,14,["Disney+"],136,"Action, Adventure",54,7.7,"Action",2.1],
+ ["Alien",1979,156,48,1,["Netflix"],117,"Horror, Science Fiction",52,8.2,"Horror",2.1],
+ ["Star Trek Into Darkness",2013,6,49,2,["Paramount+"],132,"Action, Adventure",43,7.3,"Action",2.1],
+ ["John Wick",2014,157,49,2,["Prime Video","AMC+","AMC"],101,"Action, Thriller",49,7.5,"Action",2.0],
+ ["Guardians of the Galaxy Vol. 2",2017,45,48,15,["Disney+"],137,"Action, Adventure",50,7.6,"Action",2.0],
+ ["Thor: Ragnarok",2017,251,50,16,["Disney+"],131,"Action, Adventure",44,7.6,"Action",2.0],
+ ["X-Men: Days of Future Past",2014,335,50,17,["Disney+"],132,"Action, Adventure",46,7.5,"Action",2.0],
+ ["Spies in Disguise",2019,331,49,18,["Disney+"],102,"Action, Adventure",48,7.5,"Action",2.0],
+ ["Spider-Man 3",2007,353,55,19,["Disney+"],139,"Action, Adventure",43,6.5,"Action",2.0],
+ ["The Amazing Spider-Man 2",2014,194,55,20,["Disney+"],141,"Action, Adventure",48,6.6,"Action",2.0],
+ ["Wonder Woman",2017,174,50,3,["Max"],141,"Action, Adventure",52,7.2,"Action",2.0],
+ ["Zack Snyder's Justice League",2021,51,49,4,["Max"],242,"Action, Adventure",51,8.1,"Action",1.9],
+ ["Klaus",2019,75,46,2,["Netflix"],97,"Animation, Comedy",53,8.2,"Animation",1.9],
+ ["2001: A Space Odyssey",1968,34,47,5,["Max"],149,"Adventure, Mystery",49,8.0,"Adventure",1.9],
+ ["Forrest Gump",1994,251,45,3,["Paramount+","AMC+","AMC"],142,"Comedy, Drama",48,8.5,"Comedy",1.9],
+ ["Nightcrawler",2014,154,48,1,["Peacock"],118,"Crime, Drama",47,7.7,"Crime",1.9],
+ ["Ready Player One",2018,93,47,6,["Max"],140,"Action, Adventure",49,7.6,"Action",1.9],
+ ["The Super Mario Galaxy Movie",2026,281,47,2,["Peacock"],98,"Adventure, Animation",55,8.2,"Adventure",1.8],
+ ["The Prestige",2006,268,51,3,["Netflix"],131,"Drama, Mystery",50,8.2,"Drama",1.8],
+ ["Oppenheimer",2023,295,50,3,["Peacock"],181,"Drama, History",44,8.0,"Drama",1.8],
+ ["Paris, Texas",1984,185,45,7,["Max"],145,"Drama",50,8.1,"Drama",1.8],
+ ["Frank",2014,204,51,4,["Netflix"],95,"Comedy, Drama",48,6.8,"Comedy",1.8],
+ ["The Dark Knight",2008,85,45,8,["Max"],152,"Action, Crime",55,8.5,"Action",1.8],
+ ["Men in Black",1997,89,46,4,["Paramount+","AMC"],98,"Action, Adventure",53,7.2,"Action",1.8],
+ ["Michael",2026,285,50,2,["Starz"],128,"Drama, Music",51,8.6,"Drama",1.8],
+ ["Deadpool 2",2018,286,49,9,["Max"],120,"Action, Adventure",52,7.5,"Action",1.8],
+ ["Ant-Man",2015,13,50,3,["Starz"],117,"Action, Adventure",51,7.1,"Action",1.8],
+ ["The Lego Movie",2014,342,48,5,["Paramount+"],100,"Adventure, Animation",48,7.4,"Adventure",1.8],
+ ["Joker",2019,219,44,10,["Max"],122,"Crime, Drama",54,8.1,"Crime",1.8],
+ ["Dune",2021,257,49,11,["Max"],155,"Adventure, Science Fiction",55,7.8,"Adventure",1.8],
+ ["Apollo 11",2019,353,46,5,["Netflix"],93,"Documentary, Drama",54,7.9,"Documentary",1.8],
+ ["The Flash",2023,86,52,12,["Max"],144,"Action, Adventure",47,6.6,"Action",1.7],
+ ["Star Trek",2009,85,47,6,["Paramount+"],127,"Action, Adventure",54,7.4,"Action",1.7],
+ ["Shutter Island",2010,148,45,7,["Paramount+"],138,"Drama, Mystery",52,8.2,"Drama",1.7],
+ ["The Batman",2022,102,51,13,["Max"],177,"Crime, Mystery",41,7.7,"Crime",1.7],
+ ["Moonlight",2016,29,48,6,["Netflix"],112,"Drama",48,7.4,"Drama",1.7],
+ ["The Wolf of Wall Street",2013,82,45,8,["Paramount+","Starz"],180,"Comedy, Crime",53,8.0,"Comedy",1.7],
+ ["Mission: Impossible - Fallout",2018,247,46,9,["Paramount+"],147,"Action, Adventure",53,7.5,"Action",1.7],
+ ["Transformers One",2024,169,45,10,["Paramount+","Prime Video"],104,"Adventure, Animation",55,8.0,"Adventure",1.7],
+ ["Man of Steel",2013,87,51,14,["Max"],143,"Action, Adventure",44,6.7,"Action",1.7],
+ ["Injustice",2021,195,49,15,["Max"],78,"Action, Animation",49,7.3,"Action",1.7],
+ ["Arrival",2016,255,47,11,["Paramount+"],116,"Drama, Mystery",46,7.6,"Drama",1.7],
+ ["Watchmen",2009,41,47,16,["Max"],163,"Action, Mystery",54,7.4,"Action",1.7],
+ ["Green Book",2018,164,43,7,["Netflix"],130,"Comedy, Drama",55,8.2,"Comedy",1.7],
+ ["Pulp Fiction",1994,280,43,12,["Paramount+"],154,"Comedy, Crime",55,8.5,"Comedy",1.7],
+ ["Creed II",2018,310,52,13,["Paramount+","Prime Video"],130,"Action, Drama",28,7.0,"Action",1.7],
+ ["Ultraman: Rising",2024,14,48,8,["Netflix"],117,"Action, Animation",54,8.0,"Action",1.7],
+ ["Better Man",2024,322,47,14,["Paramount+","Prime Video"],135,"Drama, Music",51,7.6,"Drama",1.7],
+ ["Entergalactic",2022,138,47,9,["Netflix"],93,"Animation, Comedy",52,7.7,"Animation",1.7],
+ ["Hancock",2008,280,51,15,["Paramount+"],92,"Action, Fantasy",48,6.4,"Action",1.7],
+ ["Ali",2001,103,49,10,["Netflix"],157,"Drama",47,6.7,"Drama",1.7],
+ ["Batman Begins",2005,184,46,17,["Max"],140,"Action, Crime",55,7.7,"Action",1.7],
+ ["Melancholia",2011,185,47,4,["Peacock"],136,"Drama, Science Fiction",48,7.1,"Drama",1.6],
+ ["Spaceman",2024,182,51,11,["Netflix"],108,"Adventure, Drama",43,6.7,"Adventure",1.6],
+ ["The Machinist",2004,151,45,16,["Paramount+"],102,"Drama, Thriller",52,7.5,"Drama",1.6],
+ ["Swindle",2014,143,49,17,["Paramount+"],92,"Comedy, Crime",46,7.0,"Comedy",1.6],
+ ["Star Wars: The Force Awakens",2015,9,47,5,["Starz"],136,"Action, Adventure",55,7.2,"Action",1.6],
+ ["Brimstone",2016,40,48,6,["Prime Video","Starz"],148,"Drama, Thriller",51,7.1,"Drama",1.6],
+ ["Superman",2025,118,49,18,["Max","Prime Video"],130,"Action, Adventure",54,7.3,"Action",1.6],
+ ["The Sixth Sense",1999,95,45,12,["Netflix"],107,"Drama, Mystery",51,8.0,"Drama",1.6],
+ ["Se7en",1995,129,45,18,["Paramount+"],127,"Crime, Mystery",55,8.4,"Crime",1.6],
+ ["V for Vendetta",2006,64,44,19,["Paramount+"],132,"Action, Science Fiction",54,7.9,"Action",1.6],
+ ["Gone Girl",2014,359,45,20,["Paramount+"],149,"Drama, Mystery",55,7.9,"Drama",1.6],
+ ["Black Adam",2022,170,51,19,["Max"],125,"Action, Adventure",52,6.7,"Action",1.6],
+ ["Hit Man",2024,5,47,13,["Netflix"],116,"Comedy, Crime",51,6.8,"Comedy",1.6],
+ ["Limitless",2011,252,49,8,["Prime Video"],106,"Mystery, Science Fiction",51,7.2,"Mystery",1.6],
+ ["HOMECOMING: A film by Beyoncé",2019,237,46,14,["Netflix"],137,"Documentary, Music",44,8.0,"Documentary",1.6],
+ ["X-Men: First Class",2011,166,45,20,["Max"],132,"Action, Adventure",51,7.3,"Action",1.6],
+ ["The Whisper Man",2026,36,52,15,["Netflix"],111,"Crime, Drama",47,6.9,"Crime",1.6],
+ ["Beast",2026,345,53,7,["Starz"],115,"Action, Drama",44,7.5,"Action",1.6],
+ ["The Talented Mr. Ripley",1999,131,45,8,["Starz"],140,"Crime, Drama",52,7.2,"Crime",1.6],
+ ["The Terminator",1984,166,44,9,["Prime Video","AMC+"],108,"Action, Science Fiction",50,7.7,"Action",1.5],
+ ["Misery",1990,340,47,4,["AMC"],107,"Drama, Thriller",46,7.8,"Drama",1.5],
+ ["Avengers: Age of Ultron",2015,147,47,9,["Starz"],141,"Action, Adventure",50,7.3,"Action",1.5],
+ ["The Super Mario Bros. Movie",2023,132,47,5,["Peacock"],93,"Adventure, Animation",53,7.6,"Adventure",1.5],
+ ["The Good Lie",2014,46,45,16,["Netflix"],110,"Drama",52,7.5,"Drama",1.5],
+ ["American Psycho",2000,153,47,6,["Peacock","Prime Video"],102,"Crime, Drama",53,7.4,"Crime",1.5],
+ ["Django Unchained",2012,186,44,4,["AMC+","Starz"],165,"Drama, Western",55,8.2,"Drama",1.5],
+ ["Dallas Buyers Club",2013,324,43,17,["Netflix"],117,"Drama, History",55,7.9,"Drama",1.5],
+ ["The Hunger Games",2012,280,46,7,["Peacock"],142,"Action, Adventure",49,7.2,"Action",1.5],
+ ["Still Alice",2014,11,45,18,["Netflix"],101,"Drama",53,7.5,"Drama",1.5],
+ ["Inside Man",2006,236,44,11,["Starz"],129,"Crime, Drama",56,7.4,"Crime",1.5],
+ ["Hustle",2022,27,46,19,["Netflix"],117,"Comedy, Drama",49,7.7,"Comedy",1.5],
+ ["Rocky",1976,122,46,11,["Prime Video","AMC+"],119,"Drama",43,7.8,"Drama",1.5],
+ ["IF",2024,0,47,20,["Netflix"],104,"Comedy, Family",47,6.9,"Comedy",1.5],
+ ["Teen Wolf: The Movie",2023,1,45,12,["Prime Video"],140,"Action, Fantasy",54,7.4,"Action",1.5],
+ ["Masters of the Universe",2026,233,47,13,["Prime Video"],141,"Action, Fantasy",49,7.1,"Action",1.5],
+ ["Mr. Nobody",2009,237,45,14,["Prime Video"],141,"Drama, Romance",51,7.8,"Drama",1.5],
+ ["My Little Pony: The Movie",2017,40,46,15,["Prime Video"],99,"Adventure, Animation",52,7.3,"Adventure",1.5],
+ ["The Hunger Games: Catching Fire",2013,53,46,8,["Peacock"],146,"Action, Adventure",51,7.4,"Action",1.5],
+ ["Donnie Darko",2001,147,45,16,["Prime Video"],114,"Drama, Fantasy",55,7.8,"Drama",1.5],
+ ["Boyhood",2014,330,46,6,["AMC+"],165,"Drama",53,7.5,"Drama",1.5],
+ ["Succubus",2024,292,46,17,["Prime Video"],103,"Horror, Thriller",47,8.4,"Horror",1.5],
+ ["Harry Potter and the Prisoner of Azkaban",2004,311,44,9,["Peacock"],141,"Adventure, Fantasy",54,8.0,"Adventure",1.5],
+ ["Star Wars",1977,157,43,5,["AMC"],121,"Action, Adventure",49,8.2,"Action",1.5],
+ ["Oblivion",2013,204,51,12,["Starz"],124,"Action, Adventure",47,6.7,"Action",1.5],
+ ["Contact",1997,202,45,18,["Prime Video"],150,"Drama, Mystery",51,7.5,"Drama",1.5],
+ ["The Shawshank Redemption",1994,106,43,6,["AMC"],142,"Crime, Drama",54,8.7,"Crime",1.5],
+ ["Wolves",2014,205,50,19,["Prime Video"],90,"Action, Horror",46,5.9,"Action",1.4],
+ ["Mission: Impossible - The Final Reckoning",2025,15,46,20,["Prime Video"],170,"Action, Adventure",55,7.2,"Action",1.4],
+ ["Shrek",2001,176,45,10,["Peacock"],90,"Adventure, Animation",53,7.8,"Adventure",1.4],
+ ["Gifted",2017,136,43,11,["Peacock"],101,"Comedy, Drama",54,8.0,"Comedy",1.4],
+ ["Whistle",2026,67,51,7,["AMC+"],100,"Horror, Mystery",48,6.3,"Horror",1.4],
+ ["Focus",2015,137,48,13,["Starz"],105,"Comedy, Crime",51,6.9,"Comedy",1.4],
+ ["Jungle",2017,274,45,12,["Peacock","Starz"],115,"Adventure, Thriller",56,6.8,"Adventure",1.4],
+ ["In the Grey",2026,51,48,15,["Starz"],97,"Action, Thriller",57,7.6,"Action",1.4],
+ ["Shelter",2026,307,47,16,["Starz"],107,"Action, Crime",55,7.8,"Action",1.4],
+ ["The Hunger Games: Mockingjay - Part 1",2014,57,47,13,["Peacock"],123,"Adventure, Science Fiction",56,6.8,"Adventure",1.4],
+ ["Unbroken",2014,22,44,14,["Peacock"],137,"Drama, War",50,7.4,"Drama",1.4],
+ ["Jumanji: Welcome to the Jungle",2017,202,46,15,["Peacock","AMC"],119,"Adventure, Comedy",52,6.8,"Adventure",1.4],
+ ["Puss in Boots",2011,293,46,16,["Peacock"],90,"Action, Adventure",54,6.6,"Action",1.4],
+ ["The Girl in the Spider's Web",2018,49,49,17,["Starz"],115,"Action, Crime",44,6.1,"Action",1.4],
+ ["Trolls",2016,313,46,17,["Peacock"],92,"Adventure, Animation",54,6.6,"Adventure",1.4],
+ ["Snowden",2016,47,44,18,["Starz"],135,"Crime, Drama",54,7.1,"Crime",1.4],
+ ["Harry Potter and the Philosopher's Stone",2001,217,44,18,["Peacock"],152,"Adventure, Fantasy",57,7.9,"Adventure",1.4],
+ ["Spy",2015,111,46,19,["Starz"],120,"Action, Comedy",54,6.8,"Action",1.4],
+ ["The Grinch",2018,40,46,19,["Peacock"],85,"Animation, Comedy",53,6.9,"Animation",1.3],
+ ["Gran Torino",2008,121,44,8,["AMC"],116,"Drama",54,8.0,"Drama",1.3],
+ ["Stranger Than Fiction",2006,274,46,20,["Peacock"],113,"Comedy, Drama",54,7.3,"Comedy",1.3],
+ ["Paul",2011,231,47,20,["Starz"],104,"Adventure, Comedy",48,6.8,"Adventure",1.3],
+ ["V/H/S/Beyond",2024,156,47,8,["AMC+"],114,"Horror, Science Fiction",51,6.6,"Horror",1.3],
+ ["Strange Darling",2024,127,47,9,["AMC+"],97,"Crime, Horror",54,6.9,"Crime",1.3],
+ ["The Empire Strikes Back",1980,317,42,9,["AMC"],124,"Action, Adventure",58,8.4,"Action",1.3],
+ ["Apollo 13",1995,56,46,10,["AMC+","AMC"],140,"Drama, History",52,7.5,"Drama",1.3],
+ ["Possession",1981,308,46,11,["AMC+"],124,"Horror",43,7.3,"Horror",1.3],
+ ["Constantine",2005,87,45,11,["AMC"],121,"Action, Fantasy",53,7.2,"Action",1.3],
+ ["Midway",2019,54,47,12,["AMC+"],138,"Action, History",55,7.1,"Action",1.3],
+ ["Mary Shelley",2017,141,43,13,["AMC+"],120,"Drama, Romance",57,7.0,"Drama",1.2],
+ ["In the Loop",2009,111,45,14,["AMC+"],106,"Comedy",53,7.0,"Comedy",1.2],
+ ["Return of the Jedi",1983,4,42,12,["AMC"],132,"Action, Adventure",55,7.9,"Action",1.2],
+ ["Halloween",2007,294,48,15,["AMC+","AMC"],110,"Horror",53,6.2,"Horror",1.2],
+ ["Infested",2023,113,46,16,["AMC+"],106,"Horror, Thriller",53,6.5,"Horror",1.2],
+ ["It",2017,268,44,14,["AMC"],135,"Drama, Horror",53,7.2,"Drama",1.2],
+ ["Halloween",1978,276,44,17,["AMC+"],91,"Horror, Thriller",51,7.6,"Horror",1.2],
+ ["Frances Ha",2013,342,43,18,["AMC+"],86,"Comedy, Drama",52,7.3,"Comedy",1.1],
+ ["Jumanji",1995,228,43,15,["AMC"],104,"Adventure, Family",53,7.2,"Adventure",1.1],
+ ["Comet",2014,316,46,19,["AMC+"],91,"Comedy, Romance",48,6.6,"Comedy",1.1],
+ ["Kill List",2011,275,46,20,["AMC+"],95,"Crime, Horror",55,6.2,"Crime",1.1],
+ ["The Exorcist",1973,24,45,16,["AMC"],122,"Horror",50,7.8,"Horror",1.1],
+ ["Groundhog Day",1993,319,42,17,["AMC"],101,"Comedy, Fantasy",55,7.6,"Comedy",1.1],
+ ["Hook",1991,273,44,18,["AMC"],142,"Adventure, Comedy",52,6.8,"Adventure",1.1],
+ ["Invasion of the Body Snatchers",1978,30,42,19,["AMC"],116,"Horror, Science Fiction",58,7.2,"Horror",1.1],
+ ["Journey 2: The Mysterious Island",2012,55,45,20,["AMC"],94,"Action, Adventure",56,6.2,"Action",1.0]
 ];
 S.forEach(s=>s.push(M.filter(m=>m[5].includes(s[0])).length));
-let chosen=['Netflix','Max'],rt='any',gn=new Set(),skip=0,deckIdx=0,openSvc=null;
+let chosen=['Disney+','Max'],rt='any',gn=new Set(),skip=0,deckIdx=0,openSvc=null;
 const tile=(n,c)=>'<span class="mono-tile '+(c||'')+'" style="--h:'+sh[n][2]+(n==='Apple TV+'?';background:linear-gradient(145deg,#444,#111)':'')+'" title="'+n+'">'+sh[n][1]+'</span>';
 const join=a=>a.length<3?a.join(' and '):a.slice(0,-1).join(', ')+' and '+a.slice(-1);
 const base=()=>chosen.length?M.filter(m=>m[5].some(s=>chosen.includes(s))):[];
 const mine=m=>m[5].filter(s=>chosen.includes(s));
-function svcBar(){$('#svc').innerHTML=S.map(s=>'<button type="button" aria-pressed="'+chosen.includes(s[0])+'" data-s="'+s[0]+'">'+tile(s[0])+'<span>'+s[0]+'<small>'+s[3]+' matches</small></span></button>').join('')}
+function svcBar(){$('#svc').innerHTML=S.map(s=>'<button type="button" aria-pressed="'+chosen.includes(s[0])+'" data-s="'+s[0]+'">'+s[0]+'</button>').join('')}
 const emptyMsg='<div class="empty">Pick a service above to see your best matches on it.</div>';
 /* Deck */
 function renderD(){
@@ -112,7 +259,7 @@ function renderD(){
  if(!chosen.length){$('#stack').outerHTML='<div class="stack" id="stack">'+emptyMsg+'</div>';$('#queue').innerHTML='';return}
  if(deckIdx>=r.length){$('#stack').innerHTML='<div class="empty">That is everything on your services. <button class="btn secondary" type="button" data-reset>Start over</button></div>';$('#queue').innerHTML='';return}
  const cards=r.slice(deckIdx,deckIdx+3);
- $('#stack').innerHTML=cards.map((m,i)=>'<article class="panel card p'+i+'" style="z-index:'+(3-i)+'"><div class="pw">'+poster(m[0],m[2])+'</div><div><p class="eyebrow">'+(deckIdx+i+1)+' of '+r.length+' · '+mine(m).join(' · ')+'</p><h2>'+m[0]+'</h2><p style="color:var(--muted)">'+m[1]+' · '+m[7]+' · '+m[6]+' min</p><div style="margin:14px 0">'+gauge(m[3])+'</div><div class="sig"><span class="s1">Taste <b>'+m[3]+'</b></span><span class="s2">Novelty <b>'+m[8]+'</b></span><span class="s3">Critics <b>'+m[9]+'</b></span></div>'+(i===0?'<div class="acts"><button class="btn primary lg" type="button" data-deck="go">▶ Watch</button><button class="btn secondary lg" type="button" data-deck="save">+ Save for later</button><button class="btn ghost" type="button" data-deck="no">Not tonight</button></div>':'')+'</div></article>').join('');
+ $('#stack').innerHTML=cards.map((m,i)=>'<article class="panel card p'+i+'" style="z-index:'+(3-i)+'"><div class="pw">'+poster(m[0],m[2])+'</div><div><p class="eyebrow">'+(deckIdx+i+1)+' of '+r.length+' · '+mine(m).join(' · ')+'</p><h2>'+m[0]+'</h2><p style="color:var(--muted)">'+m[1]+' · '+m[7]+' · '+m[6]+' min</p><div style="margin:14px 0">'+gauge(m[11])+'</div><div class="sig"><span class="s1">Match <b>'+m[3]+'%</b></span><span class="s2">Novelty <b>'+m[8]+'</b></span><span class="s3">TMDB <b>'+m[9]+'</b></span></div>'+(i===0?'<div class="acts"><button class="btn primary lg" type="button" data-deck="go">▶ Watch</button><button class="btn secondary lg" type="button" data-deck="save">+ Save for later</button><button class="btn ghost" type="button" data-deck="no">Not tonight</button></div>':'')+'</div></article>').join('');
  $('#queue').innerHTML='<p class="label">Up next</p>'+r.slice(deckIdx+1,deckIdx+6).map(m=>'<div class="cc">'+poster(m[0],m[2],'sm')+'<div><b>'+m[0]+'</b><small>'+m[1]+'</small><span class="pc">'+m[3]+'%</span></div></div>').join('')}
 function all(){svcBar();renderD()}
 document.addEventListener('click',e=>{

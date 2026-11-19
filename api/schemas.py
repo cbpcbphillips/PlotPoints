@@ -33,6 +33,10 @@ class RecommendRequest(BaseModel):
     offset: int = Field(default=0, ge=0, le=350)
 
 
+class ProfileRequest(BaseModel):
+    films: list[Film] = Field(max_length=MAX_FILMS)
+
+
 class LetterboxdRequest(BaseModel):
     username: str = Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")
 

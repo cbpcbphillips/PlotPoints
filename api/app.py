@@ -22,16 +22,21 @@ import snapshot
 from api.inbox import Inbox
 from api.letterboxd import LetterboxdError, collapse, fetch_feed
 from api.matching import match_rows
+from api.profile import profile_stats
 from api.schemas import (
     ConsentRequest,
     DeleteRequest,
     LetterboxdRequest,
     MatchRequest,
+    ProfileRequest,
     RecommendRequest,
 )
 
 MAX_POOL = 400  # offset + limit; deeper than this is not a recommendation list any more
 FRANCHISE_POOL = 300  # how far down the ranking franchises are gathered from
+FRANCHISES_SHOWN = 5  # the page shows a person's top five series, not every one
+FILMS_PER_FRANCHISE = 8  # unseen films kept per series: its best plus the next seven
+INFLUENCE_PICKS = 20  # the top picks the "because you enjoyed" row is measured against
 MAX_PROVIDERS_LISTED = 60
 
 
@@ -124,6 +129,10 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
             profiles[m.name] = films
         return profiles, {"unmatched_films": unmatched}
 
+    def novelty_of(r: dict) -> int | None:
+        because = r["members"][0]["because"] if r["members"] else []
+        return 100 - round(because[0]["cosine"] * 100) if because else None
+
     def present(s: snapshot.Snapshot, r: dict) -> dict:
         i = r["index"]
         return {
@@ -133,6 +142,11 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
             "title": r["title"],
             "year": r["year"],
             "match": round(r["match"] * 100),
+            # the ranking score (hubness-corrected, roughly 2-4 at the top); NOT a percentage
+            "score": round(r["score"], 1),
+            # Stand-in until roadmap decision 5d settles a definition: how far the pick sits from
+            # the film that explains it best. Display only; it never enters the ranking.
+            "novelty": novelty_of(r),
             "tmdb_rating": None if np.isnan(s.rating[i]) else round(float(s.rating[i]), 1),
             "runtime": None if np.isnan(s.runtime[i]) else int(s.runtime[i]),
             "poster_path": s.poster[i],
@@ -155,6 +169,44 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
                 for m in r["members"]
             ],
         }
+
+    def enjoyed_films(s: snapshot.Snapshot, profiles, results: list[dict], films) -> list[dict]:
+        """The liked films that best explain the top picks, ranked by weighted similarity."""
+        ratings = {f.tmdb_id: f.rating for f in films}
+        top = scoring.influence(s, profiles, [r["index"] for r in results[:INFLUENCE_PICKS]])
+        return [
+            {
+                "tmdb_id": e["tmdb_id"],
+                "media_key": e["media_key"],
+                "title": e["title"],
+                "year": int(s.year[e["index"]]) or None,
+                "poster_path": s.poster[e["index"]],
+                "rating": ratings.get(e["tmdb_id"]),
+                "avg_match": round(e["avg_cosine"] * 100),
+            }
+            for e in top
+        ]
+
+    def seen_in_franchise(s: snapshot.Snapshot, name: str, req: RecommendRequest) -> list[dict]:
+        """Films of this series the first member has already seen, with their own rating."""
+        out = []
+        for f in req.members[0].films:
+            i = s.by_tmdb.get((f.media_type, f.tmdb_id))
+            if i is None or s.franchise[i] != name:
+                continue
+            out.append(
+                {
+                    "tmdb_id": f.tmdb_id,
+                    "media_key": s.media_key[i],
+                    "title": s.title[i],
+                    "year": int(s.year[i]) or None,
+                    "rating": f.rating,
+                    "tmdb_rating": None if np.isnan(s.rating[i]) else round(float(s.rating[i]), 1),
+                    "poster_path": s.poster[i],
+                }
+            )
+        out.sort(key=lambda x: (x["year"] or 0, x["title"]))
+        return out
 
     def allow_mask(s: snapshot.Snapshot, providers: list[str]):
         if not providers:
@@ -222,11 +274,15 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
                 item["overall_rank"] = by_index.get(r["index"])
             info["pool_size"] = len(overall)
             info["pool_matches"] = sum(1 for r in overall if allow[r["index"]])
+        enjoyed = None
+        if body.offset == 0 and not body.providers and len(profiles) == 1:
+            enjoyed = enjoyed_films(s, profiles, results, body.members[0].films)
         return {
             "snapshot": s.version,
             "group": len(profiles) > 1,
             "providers": body.providers,
             "results": page,
+            "enjoyed": enjoyed,
             "has_more": len(results) == body.offset + body.limit,
             **info,
         }
@@ -244,12 +300,22 @@ def create_app(snap: snapshot.Snapshot | None = None, inbox: Inbox | None = None
             if name:
                 groups.setdefault(name, []).append(present(s, r))
         out = [
-            {"franchise": name, "best": rs[0], "others": rs[1:], "count": len(rs)}
+            {
+                "franchise": name,
+                "best": rs[0],
+                "others": rs[1:FILMS_PER_FRANCHISE],
+                "count": len(rs),
+                "seen": seen_in_franchise(s, name, body),
+            }
             for name, rs in groups.items()
             if len(rs) >= 2  # a franchise of one is just a recommendation
         ]
         out.sort(key=lambda g: g["best"]["rank"])
-        return {"snapshot": s.version, "franchises": out, **info}
+        return {"snapshot": s.version, "franchises": out[:FRANCHISES_SHOWN], **info}
+
+    @app.post("/profile")
+    def profile(body: ProfileRequest, request: Request):
+        return profile_stats(request.app.state.snap, [f.model_dump() for f in body.films])
 
     @app.post("/consent")
     def consent(body: ConsentRequest, request: Request):

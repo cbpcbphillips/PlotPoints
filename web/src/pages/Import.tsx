@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ImportForm } from '../components/ImportForm'
+import { TasteProfile } from '../components/TasteProfile'
 import { Shell } from '../components/Shell'
 import { PageTitle } from '../components/States'
 import { api } from '../lib/api'
@@ -117,6 +118,8 @@ export function ImportReturning() {
           <ImportForm mode="add" />
         </div>
       </section>
+
+      <TasteProfile profile={profile} />
 
       <section
         id="consent"

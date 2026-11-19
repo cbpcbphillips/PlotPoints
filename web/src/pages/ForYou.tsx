@@ -1,21 +1,19 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Navigate } from 'react-router-dom'
-import { ResultList } from '../components/ResultList'
+import { FilmCard } from '../components/FilmCard'
+import { Poster } from '../components/Poster'
 import { Shell } from '../components/Shell'
+import { Gauge, Sig, Stars } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
-import { Match, Tile } from '../components/Tile'
 import { api } from '../lib/api'
-import { joinList, ratedPhrase, tmdbWatchUrl } from '../lib/format'
+import { prettyDate, tmdbWatchUrl } from '../lib/format'
 import { effectiveFilms, useProfile, type Profile } from '../lib/profile'
-import type { Result } from '../lib/types'
+import type { Enjoyed, Result } from '../lib/types'
 
-const FIRST_PAGE = 11 // the top match, plus ten more
+const FIRST_PAGE = 20 // the top pick, the reel, and the sample the "because you enjoyed" row uses
 const PAGE = 10
 
-/**
- * Recommendations for the current profile, paged. Shared with the Streaming page, which has no
- * hero and so passes firstPage = PAGE.
- */
+/** Recommendations for the current profile, paged. */
 export function useRecommendations(
   profile: Profile,
   providers: string[] = [],
@@ -45,103 +43,170 @@ export function useRecommendations(
   })
 }
 
-function Hero({ r, profile, onNope }: { r: Result; profile: Profile; onNope: () => void }) {
-  const because = r.members[0]?.because ?? []
-  const ratings = new Map(profile.films.map((f) => [f.tmdb_id, f.rating]))
-  const meta = [r.year, r.genres.slice(0, 3).join(', '), r.tmdb_rating && `TMDB ${r.tmdb_rating.toFixed(1)}`]
-    .filter(Boolean)
-    .join(' · ')
+const LABELS = ['Closest film you rated', 'Second closest', 'Third closest']
 
-  const buttons = (
-    <div className="flex flex-col gap-2.5 pt-1 sm:flex-row sm:flex-wrap sm:gap-2.5 lg:gap-3 lg:pt-1.5">
-      <a
-        href={tmdbWatchUrl(r.tmdb_id)}
-        target="_blank"
-        rel="noreferrer"
-        className="press inline-flex min-h-[52px] items-center justify-center rounded-xl bg-accent px-7 py-3.5 text-lg font-bold text-on no-underline sm:px-7 lg:min-h-14 lg:px-8 lg:text-[19px]"
-      >
-        Where to watch
-      </a>
-      <button
-        type="button"
-        onClick={onNope}
-        className="press min-h-[52px] cursor-pointer rounded-xl border-0 bg-surface2 px-7 py-3.5 text-lg font-bold text-ink lg:min-h-14 lg:px-8 lg:text-[19px]"
-      >
-        Not for me
-      </button>
+/** Decorative constellation behind the hero: the pick is the lit point nearest your cluster. */
+function Backdrop() {
+  return (
+    <div className="backdrop" role="img" aria-label="Decorative backdrop">
+      <svg viewBox="0 0 800 335" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g fill="#8FA0FF">
+          <circle cx="90" cy="70" r="3" />
+          <circle cx="210" cy="140" r="4" />
+          <circle cx="330" cy="60" r="3" />
+          <circle cx="420" cy="190" r="5" />
+          <circle cx="520" cy="95" r="3" />
+          <circle cx="640" cy="160" r="4" />
+          <circle cx="730" cy="60" r="3" />
+          <circle cx="150" cy="250" r="3" />
+          <circle cx="560" cy="270" r="4" />
+        </g>
+        <g stroke="#F5B84B" strokeOpacity=".4" fill="none">
+          <path d="M90 70L210 140M210 140L420 190M420 190L640 160M330 60L420 190M420 190L560 270" />
+        </g>
+        <circle cx="640" cy="160" r="10" fill="#F5B84B" />
+        <circle cx="640" cy="160" r="17" fill="none" stroke="#F5B84B" />
+      </svg>
+      <span>NOW SHOWING</span>
+      <span>YOUR NEAREST POINT IN TASTE SPACE</span>
     </div>
   )
+}
 
+function Hero({
+  r,
+  asOf,
+  onNope,
+}: {
+  r: Result
+  asOf: string | undefined
+  onNope: () => void
+}) {
   return (
-    <section aria-labelledby="top-match" className="pb-10 pt-6 sm:pb-16 sm:pt-14 lg:pb-24 lg:pt-20">
-      {/* phone: a card, small tile beside the title */}
-      <div className="flex flex-col gap-4 rounded-2xl bg-surface p-[18px] sm:hidden">
-        <div className="text-[13px] font-bold uppercase tracking-[0.16em] text-accent">
-          Tonight&rsquo;s top match
-        </div>
-        <div className="flex items-start gap-4">
-          <Tile
-            id={r.tmdb_id}
-            title={r.title}
-            className="h-[162px] w-[108px] flex-none rounded-[10px] p-2.5 text-[15px]"
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <h1 className="m-0 text-2xl font-bold leading-[1.08] tracking-[-0.01em]">{r.title}</h1>
-            <div className="text-[15px] text-muted">{meta}</div>
-            <div className="mt-1">
-              <Match value={r.match} size="text-[44px]" />
-            </div>
-          </div>
-        </div>
-        <div className="text-[15px] text-muted">
-          Because you watched {joinList(because.map((b) => b.title))}
-        </div>
-        {buttons}
+    <section className="hero" aria-labelledby="pick">
+      <div className="lb">
+        <Backdrop />
       </div>
-
-      {/* tablet and desktop */}
-      <div className="hidden gap-9 sm:flex sm:flex-wrap sm:items-center lg:flex-nowrap lg:items-start lg:gap-14">
-        <Tile
-          id={r.tmdb_id}
-          title={r.title}
-          className="aspect-[2/3] w-[250px] flex-none rounded-[14px] p-[22px] text-[32px] lg:order-2 lg:w-[360px] lg:p-7 lg:text-[40px]"
-        />
-        <div className="flex min-w-0 flex-[1_1_340px] flex-col items-start gap-[18px] lg:order-1 lg:gap-[26px]">
-          <div
-            id="top-match"
-            className="text-sm font-bold uppercase tracking-[0.16em] text-accent lg:text-[15px]"
-          >
-            Tonight&rsquo;s top match
-          </div>
-          <h1 className="m-0 text-balance text-[46px] font-bold leading-none tracking-[-0.02em] lg:text-[72px]">
-            {r.title}
-          </h1>
-          <p className="m-0 hidden max-w-[30em] text-2xl italic leading-[1.45] text-muted lg:block">
-            Closest to {joinList(because.map((b) => b.title))}, which you rated highly. This is the
-            best film you have not seen.
+      <div className="hero-body">
+        <div className="pwrap">
+          <Poster id={r.tmdb_id} title={r.title} />
+        </div>
+        <div className="txt">
+          <p className="eyebrow m-0">Recommended</p>
+          <h1 id="pick">{r.title}</h1>
+          <p className="meta m-0">
+            {r.year && <span>{r.year}</span>}
+            {r.runtime && <span>{r.runtime} min</span>}
           </p>
-          <div className="text-[17px] text-muted lg:text-lg">{meta}</div>
-          <Match value={r.match} size="text-[60px] lg:text-[76px]" />
-          <div className="text-[17px] text-muted lg:hidden">
-            Because you watched {joinList(because.map((b) => b.title))}
-          </div>
-          {buttons}
-          <aside className="hidden w-full max-w-[420px] flex-col gap-1.5 rounded-[14px] bg-surface p-7 lg:flex">
-            <div className="mb-2 text-[15px] font-bold uppercase tracking-[0.14em] text-muted">
-              Closest films you have seen
-            </div>
-            {because.map((b) => (
-              <div key={b.tmdb_id} className="flex justify-between gap-3.5 py-2">
-                <span className="text-[19px]">{b.title}</span>
-                <span className="whitespace-nowrap font-bold text-accent">
-                  {ratedPhrase(ratings.get(b.tmdb_id) ?? null)}
+          {r.genres.length > 0 && (
+            <div className="chips mt-3">
+              {r.genres.map((g) => (
+                <span key={g} className="chip">
+                  {g}
                 </span>
-              </div>
-            ))}
-          </aside>
+              ))}
+            </div>
+          )}
+          <Gauge score={r.score} />
+          <Sig r={r} />
+          <div className="chips">
+            <a
+              className="btn primary"
+              href={tmdbWatchUrl(r.tmdb_id)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Where to watch
+            </a>
+            <button className="btn secondary" type="button" onClick={onNope}>
+              Not for me
+            </button>
+          </div>
+          {r.providers.length > 0 && (
+            <p className="avail">
+              <span className="label">Streaming (US)</span>
+              {r.providers.slice(0, 4).map((p) => (
+                <span key={p} className="chip">
+                  {p}
+                </span>
+              ))}
+              <span>{asOf ? `as of ${asOf} · ` : ''}via JustWatch</span>
+            </p>
+          )}
         </div>
       </div>
     </section>
+  )
+}
+
+function Why({ r, ratings }: { r: Result; ratings: Map<number, number | null> }) {
+  const because = r.members[0]?.because ?? []
+  return (
+    <section className="panel" aria-labelledby="why">
+      <div className="why-head">
+        <h2 id="why">Why this pick</h2>
+        <span className="label">{because.length} films you rated</span>
+      </div>
+      <ol className="reasons">
+        {because.map((b, i) => {
+          const rating = ratings.get(b.tmdb_id) ?? null
+          return (
+            <li key={b.tmdb_id}>
+              <div>
+                <span className="award">{LABELS[i] ?? `Closest #${i + 1}`}</span>
+                <p>
+                  You {rating != null ? 'rated' : 'watched'} <b>{b.title}</b>{' '}
+                  {rating != null && <Stars rating={rating} />}
+                  <span className="sim">{b.match}% similar</span>
+                </p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+/**
+ * The best film outside the franchise the list leans on. This is franchise diversity, not the
+ * "step outside your niche" pick the roadmap describes (decision 5c); the copy says only what it is.
+ */
+function Beyond({ top, other }: { top: Result; other: Result }) {
+  return (
+    <aside className="panel">
+      <span className="tag">Beyond {top.franchise}</span>
+      <h2>Best outside the franchise</h2>
+      <div className="sp">
+        <Poster id={other.tmdb_id} title={other.title} />
+        <div>
+          <b className="font-title">{other.title}</b>
+          <div className="meta">
+            {other.year && <span>{other.year}</span>}
+            {other.runtime && <span>{other.runtime} min</span>}
+          </div>
+          <p>
+            {other.match}% match. The highest-ranked film outside the franchise your list leans on.
+          </p>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function EnjoyedCard({ e }: { e: Enjoyed }) {
+  return (
+    <figure className="fc m-0">
+      <div className="pw">
+        <Poster id={e.tmdb_id} title={e.title} />
+      </div>
+      <figcaption>
+        <b>{e.title}</b>
+        <small>{e.year}</small>
+        {e.rating != null && <Stars rating={e.rating} />}
+        <small>{e.avg_match}% avg match</small>
+      </figcaption>
+    </figure>
   )
 }
 
@@ -153,49 +218,70 @@ export function ForYou() {
 
 function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number) => void }) {
   const q = useRecommendations(profile)
+  const meta = useQuery({ queryKey: ['meta'], queryFn: api.meta, staleTime: Infinity })
   const results = q.data?.pages.flatMap((p) => p.results) ?? []
   const [top, ...rest] = results
+  const enjoyed = q.data?.pages[0].enjoyed ?? []
+  const ratings = new Map(profile.films.map((f) => [f.tmdb_id, f.rating]))
+  const outside = top?.franchise ? rest.find((x) => x.franchise !== top.franchise) : undefined
 
   return (
     <Shell>
-      {q.isPending && <Loading />}
-      {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
-      {top && (
-        <>
-          <Hero r={top} profile={profile} onNope={() => onNope(top.tmdb_id)} />
-          <section>
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-t border-line pt-6 sm:mb-7 sm:pt-8 lg:mb-3 lg:pt-10">
-              <h2 className="m-0 text-[28px] font-bold tracking-[-0.01em] sm:text-4xl lg:text-[42px]">
-                <span className="sm:hidden">Your list</span>
-                <span className="hidden sm:inline lg:hidden">More for you</span>
-                <span className="hidden lg:inline">The rest of your list</span>
-              </h2>
-              <span className="text-sm text-muted sm:text-base lg:text-[17px]">
-                Closest to what you rated highly
-              </span>
+      <div className="pt-6">
+        {q.isPending && <Loading />}
+        {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
+        {top && (
+          <>
+            <Hero
+              r={top}
+              asOf={meta.data ? prettyDate(meta.data.providers_as_of) : undefined}
+              onNope={() => onNope(top.tmdb_id)}
+            />
+            <div className="two" style={outside ? undefined : { gridTemplateColumns: '1fr' }}>
+              <Why r={top} ratings={ratings} />
+              {outside && <Beyond top={top} other={outside} />}
             </div>
-            <ResultList results={rest} />
+
+            {enjoyed.length > 0 && (
+              <>
+                <h2 className="sec">
+                  Because you <em>enjoyed</em>
+                </h2>
+                <div className="row">
+                  {enjoyed.map((e) => (
+                    <EnjoyedCard key={e.media_key} e={e} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <h2 className="sec">Other recommendations</h2>
+            <div className="row">
+              {rest.map((r) => (
+                <FilmCard key={r.media_key} r={r} />
+              ))}
+            </div>
             {q.hasNextPage && (
-              <div className="flex justify-center pt-8 lg:pt-12">
+              <div className="flex justify-center pt-6">
                 <button
                   type="button"
+                  className="btn secondary lg"
                   disabled={q.isFetchingNextPage}
                   onClick={() => q.fetchNextPage()}
-                  className="press min-h-[52px] w-full cursor-pointer rounded-xl border-0 bg-surface2 px-9 py-3.5 text-lg font-bold text-ink sm:w-auto lg:min-h-14 lg:text-[19px]"
                 >
                   {q.isFetchingNextPage ? 'Loading…' : 'Show 10 more'}
                 </button>
               </div>
             )}
             {q.data?.pages[0].unmatched_films ? (
-              <p className="pt-8 text-center text-[15px] text-muted">
+              <p className="pt-8 text-center text-sm text-muted">
                 {q.data.pages[0].unmatched_films} of your films are not in the catalog, so they
                 could not be used.
               </p>
             ) : null}
-          </section>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </Shell>
   )
 }

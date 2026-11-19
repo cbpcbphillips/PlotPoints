@@ -13,7 +13,7 @@ main{padding-top:26px}
 .lb{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--border)}
 .lb-bar{height:clamp(12px,2vw,26px);background:#000}
 .backdrop{aspect-ratio:2.39/1;position:relative;background:linear-gradient(105deg,#0B0D17,color-mix(in srgb,var(--pt-lo) 45%,#0B0D17) 45%,color-mix(in srgb,var(--accent) 30%,#1a0d00));display:flex;align-items:flex-start;justify-content:space-between;padding:14px 20px}
-:root[data-theme="dark"] .backdrop{background:linear-gradient(105deg,color-mix(in srgb,var(--accent) 62%,#1a0d00),color-mix(in srgb,var(--accent) 34%,#0B0D17) 45%,#0B0D17)}
+:root[data-theme="dark"] .backdrop{background:linear-gradient(105deg,color-mix(in srgb,var(--accent) 62%,#1a0d00),color-mix(in srgb,var(--accent) 34%,var(--bg)) 45%,var(--bg))}
 .backdrop::before{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.5),transparent 55%)}
 .backdrop svg{position:absolute;inset:0;width:100%;height:100%;opacity:.4}
 .backdrop span{position:relative;font:600 11px var(--mono);letter-spacing:.3em;color:#ECEAF4}
@@ -48,41 +48,39 @@ main{padding-top:26px}
    <div class="lb"><div class="lb-bar"></div><div class="backdrop" role="img" aria-label="Placeholder backdrop">
      <svg viewBox="0 0 800 335" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="#8FA0FF"><circle cx="90" cy="70" r="3"/><circle cx="210" cy="140" r="4"/><circle cx="330" cy="60" r="3"/><circle cx="420" cy="190" r="5"/><circle cx="520" cy="95" r="3"/><circle cx="640" cy="160" r="4"/><circle cx="730" cy="60" r="3"/><circle cx="150" cy="250" r="3"/><circle cx="560" cy="270" r="4"/></g><g stroke="#F5B84B" stroke-opacity=".4" fill="none"><path d="M90 70L210 140M210 140L420 190M420 190L640 160M330 60L420 190M420 190L560 270"/></g><circle cx="640" cy="160" r="10" fill="#F5B84B"/><circle cx="640" cy="160" r="17" fill="none" stroke="#F5B84B"/></svg>
      <span>NOW SHOWING</span><span>YOUR NEAREST POINT IN TASTE SPACE</span></div><div class="lb-bar"></div></div>
-   <div class="hero-body"><div class="pwrap"><div class="poster" style="--h:32" role="img" aria-label="Placeholder poster for Burning"><span>Burning</span></div></div>
-    <div class="txt"><p class="eyebrow">Recommended · tonight</p><h1 id="pick">Burning</h1>
-     <p class="meta"><span>2018</span><span>Dir. Lee Chang-dong</span><span>148 min</span><span class="rank">OVERALL RANK 1</span></p>
-     <div class="chips" style="margin-top:12px"><span class="chip">Drama</span><span class="chip">Mystery</span><span class="chip">Thriller</span></div>
-     <p class="syn">A young courier reconnects with a childhood neighbour, who returns from a trip abroad with a wealthy, enigmatic friend. A slow, humid dread settles in as one confession after another refuses to add up.</p>
-     <div class="gauge"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="22"/><circle class="val" cx="24" cy="24" r="22" stroke-dasharray="127.1 138.2"/></svg><div><b>92%</b><small>match with the films that explain it</small></div></div>
-     <div class="sig" aria-label="Signals"><span class="s1">Taste match <b>92</b></span><span class="s2">Novelty <b>61</b></span><span class="s3">Critical reception <b>88</b></span></div>
+   <div class="hero-body"><div class="pwrap"><div class="poster" style="--h:138" role="img" aria-label="Placeholder poster for Spider-Man: Across the Spider-Verse"><span>Spider-Man: Across the Spider-Verse</span></div></div>
+    <div class="txt"><p class="eyebrow">Recommended</p><h1 id="pick">Spider-Man: Across the Spider-Verse</h1>
+     <p class="meta"><span>2023</span><span>140 min</span></p>
+     <div class="chips" style="margin-top:12px"><span class="chip">Action</span><span class="chip">Adventure</span><span class="chip">Animation</span><span class="chip">Science Fiction</span></div>
+          <div class="gauge"><b>4.2</b><small>score</small></div>
+     <div class="sig" aria-label="Signals"><span class="s1">Match <b>62%</b></span><span class="s2">Novelty <b>23</b></span><span class="s3">TMDB <b>8.4</b></span></div>
      <div class="chips"><button class="btn primary" type="button">+ Add to watchlist</button><button class="btn secondary" type="button">Seen it</button><button class="btn ghost" type="button">Not interested</button></div>
-     <p class="avail"><span class="label">Streaming (US)</span><span class="chip">Netflix</span><span class="chip">Max</span><span>as of Nov 16 · via JustWatch</span></p>
+     <p class="avail"><span class="label">Streaming (US)</span><span class="chip">fuboTV</span><span class="chip">Max</span><span class="chip">Disney+</span><span class="chip">FXNow</span><span>as of Nov 16 · via JustWatch</span></p>
     </div></div>
   </section>
 
   <div class="two">
-   <section class="panel" aria-labelledby="why"><div class="why-head"><h2 id="why">Why this pick</h2><span class="label">3 films you liked</span></div>
+   <section class="panel" aria-labelledby="why"><div class="why-head"><h2 id="why">Why this pick</h2><span class="label">3 films you rated</span></div>
     <ol class="reasons">
-     <li><div><span class="award">Closest match</span><p>You rated <b>Memories of Murder</b> <span class="stars" role="img" aria-label="5 out of 5">★★★★★</span><span class="sim">78% similar</span><br>Another slow-burn mystery that withholds a tidy answer.</p></div></li>
-     <li><div><span class="award">Same director</span><p>You rated <b>Poetry</b> <span class="stars" role="img" aria-label="5 out of 5">★★★★★</span><span class="sim">71% similar</span><br>Lee Chang-dong again, and the same patient, quietly devastating tone.</p></div></li>
-     <li><div><span class="award">Surprising overlap</span><p>You rated <b>Zodiac</b> <span class="stars" role="img" aria-label="4 out of 5">★★★★<span class="off">★</span></span><span class="sim">64% similar</span><br>Echoes its obsessive uncertainty, but is more ambiguous than your usual thrillers.</p></div></li>
-    </ol></section>
-   <aside class="panel"><span class="tag">Late-night wildcard</span><h2>An outlier worth a look</h2>
-    <div class="sp"><div class="poster" style="--h:12" role="img" aria-label="Placeholder poster for Paddington 2"><span>Paddington 2</span></div><div><b style="font-family:var(--title)">Paddington 2</b><div class="meta"><span>2017</span><span>Dir. Paul King</span></div><p>Far outside your usual cluster, but loved by viewers who rate precision-built, humane films as highly as you do.</p></div></div></aside>
+     <li><div><span class="award">Closest film you rated</span><p>You rated <b>Spider-Man: Into the Spider-Verse</b> <span class="stars" role="img" aria-label="5 out of 5">★★★★★</span><span class="sim">77% similar</span></p></div></li>
+     <li><div><span class="award">Second closest</span><p>You rated <b>Spider-Man: Homecoming</b> <span class="stars" role="img" aria-label="4 out of 5">★★★★</span><span class="sim">57% similar</span></p></div></li>
+     <li><div><span class="award">Third closest</span><p>You rated <b>Spider-Man: Brand New Day</b> <span class="stars" role="img" aria-label="4.5 out of 5">★★★★½</span><span class="sim">53% similar</span></p></div></li>
+     </ol></section>
+   <aside class="panel"><span class="tag">Beyond Spider-Man</span><h2>Best outside the franchise</h2><div class="sp"><div class="poster" style="--h:32" role="img" aria-label="Placeholder poster for Avengers: Infinity War"><span>Avengers: Infinity War</span></div><div><b style="font-family:var(--title)">Avengers: Infinity War</b><div class="meta"><span>2018</span><span>149 min</span></div><p>54% match. The highest-ranked film outside the franchise your list leans on.</p></div></div></aside>
   </div>
 
-  <h2 class="sec">Because you rated <em>highly</em></h2><div class="row" id="because"></div>
-  <h2 class="sec">The reel · more like this</h2><div class="row" id="reel"></div>
-  <div class="legend" aria-label="Dot legend"><span><i style="background:var(--coral)"></i>Taste match</span><span><i style="background:var(--mint)"></i>Novelty</span><span><i style="background:var(--sky)"></i>Critical reception</span><span>Dot opacity = strength · hover a poster for actions</span></div>
+  <h2 class="sec">Because you <em>enjoyed</em></h2><div class="row" id="because"></div>
+  <h2 class="sec">Other recommendations</h2><div class="row" id="reel"></div>
 </main>
 <script src="mock-07-shared.js"></script>
 <script>
 (function(){
 const {$,poster,stars,dots,ov}=PP;
-const because=[['Memories of Murder',2003,20,5],['Poetry',2010,200,5],['Parasite',2019,150,4.5],['Oldboy',2003,350,4.5],['Zodiac',2007,60,4],['Mother',2009,280,4]];
-const reel=[['The Handmaiden',2016,330,88,55,92],['Cure',1997,190,85,72,84],['Nightcrawler',2014,260,83,40,90],['Gone Girl',2014,90,81,35,86],['The Wailing',2016,120,80,66,78],['Prisoners',2013,210,79,38,82],['Decision to Leave',2022,170,77,58,88]];
-$('#because').innerHTML=because.map(f=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+'</small>'+stars(f[3])+'</figcaption></figure>').join('');
-$('#reel').innerHTML=reel.map((f,i)=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+ov+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+' · #'+(i+2)+' overall</small>'+dots(f[3],f[4],f[5])+'</figcaption></figure>').join('');
+const because=[["Spider-Man: Into the Spider-Verse",2018,319,5.0,54],["Spider-Man: Homecoming",2017,325,4.0,55],["Interstellar",2014,32,4.5,49],["Spider-Man: Brand New Day",2026,87,4.5,50],["Good Will Hunting",1997,303,5.0,42],["The Odyssey",2026,359,4.5,48]];
+const reel=[["Spider-Man: No Way Home",2021,343,64,41,7.9,3.8],["Spider-Man",2002,259,61,39,7.4,3.1],["Spider-Man: Far From Home",2019,319,61,43,7.4,3.1],["Avengers: Infinity War",2018,32,54,43,8.2,3.0],["Guardians of the Galaxy",2014,340,51,42,7.9,2.7],["Spider-Man 2",2004,306,56,45,7.3,2.6],["Logan",2017,45,54,50,7.8,2.6]];
+$('#because').innerHTML=because.map(f=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+'</small>'+stars(f[3])+'<small>'+f[4]+'% avg match</small></figcaption></figure>').join('');
+const dv=f=>'<div class="dv">'+[['coral',f[3]+'%',f[3]/100],['mint',f[4],f[4]/100],['sky',f[5],f[5]/10]].map(d=>'<span><i style="background:var(--'+d[0]+');opacity:'+(.25+d[2]*.75).toFixed(2)+'"></i>'+d[1]+'</span>').join('')+'</div>';
+$('#reel').innerHTML=reel.map((f,i)=>'<figure class="fc"><div class="pw">'+poster(f[0],f[2])+ov+'</div><figcaption><b>'+f[0]+'</b><small>'+f[1]+' · #'+(i+2)+' overall</small>'+'<div class="sc"><b>'+f[6].toFixed(1)+'</b><span>score</span></div>'+dv(f)+'</figcaption></figure>').join('');
 })();
 </script>
 </body></html>
