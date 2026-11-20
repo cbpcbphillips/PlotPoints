@@ -1,12 +1,15 @@
 import type {
   CsvRow,
   Film,
+  FilmDetail,
+  FilmForMe,
   FranchiseGroup,
   ImportedFilm,
   MatchResponse,
   Meta,
   ProfileStats,
   RecommendResponse,
+  SimilarFilm,
 } from './types'
 
 // Same origin in production behind a proxy, or an absolute URL set at build time
@@ -53,10 +56,18 @@ export interface RecommendBody {
   providers?: string[]
   limit?: number
   offset?: number
+  /** One row per franchise (best film plus a count of the rest). */
+  bundle?: boolean
+  /** Size of the varied second row; honoured on the first, unfiltered page only. */
+  branch_out?: number
 }
 
 export const api = {
   meta: () => request<Meta>('/meta'),
+  film: (id: number) => request<FilmDetail>(`/film/${id}`),
+  filmForMe: (id: number, films: Film[]) => post<FilmForMe>(`/film/${id}/for-me`, { films }),
+  similar: (id: number, limit = 12) =>
+    request<{ films: SimilarFilm[] }>(`/film/${id}/similar?limit=${limit}`),
   importLetterboxd: (username: string) =>
     post<{ username: string; entries: number; films: ImportedFilm[] }>('/import/letterboxd', {
       username,

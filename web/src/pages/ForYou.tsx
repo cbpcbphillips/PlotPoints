@@ -1,8 +1,9 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
+import { Backdrop } from '../components/Backdrop'
 import { FilmCard } from '../components/FilmCard'
-import { Poster, tmdbImage } from '../components/Poster'
+import { FilmLink } from '../components/FilmLink'
+import { Poster } from '../components/Poster'
 import { Shell } from '../components/Shell'
 import { Gauge, Sig, Stars } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
@@ -13,6 +14,7 @@ import type { Enjoyed, Result } from '../lib/types'
 
 const FIRST_PAGE = 20 // the top pick, the reel, and the sample the "because you enjoyed" row uses
 const PAGE = 10
+const BRANCH_OUT = 12 // films in the varied second row
 
 /** Recommendations for the current profile, paged. */
 export function useRecommendations(
@@ -38,6 +40,8 @@ export function useRecommendations(
         providers,
         offset: pageParam,
         limit: pageParam === 0 ? firstPage : PAGE,
+        bundle: true,
+        branch_out: pageParam === 0 ? BRANCH_OUT : 0,
       }),
     getNextPageParam: (last, pages) =>
       last.has_more ? pages.reduce((n, p) => n + p.results.length, 0) : undefined,
@@ -45,44 +49,6 @@ export function useRecommendations(
 }
 
 const LABELS = ['Closest film you rated', 'Second closest', 'Third closest']
-
-/** Decorative constellation behind the hero: the pick is the lit point nearest your cluster. */
-function Backdrop({ path }: { path: string | null }) {
-  const [failed, setFailed] = useState(false)
-  if (path && !failed) {
-    return (
-      <div className="backdrop" role="img" aria-label="Film still">
-        <img src={tmdbImage(path, 'w1280')} alt="" decoding="async" onError={() => setFailed(true)} />
-        <span>NOW SHOWING</span>
-        <span>YOUR NEAREST POINT IN TASTE SPACE</span>
-      </div>
-    )
-  }
-  return (
-    <div className="backdrop" role="img" aria-label="Decorative backdrop">
-      <svg viewBox="0 0 800 335" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <g fill="#8FA0FF">
-          <circle cx="90" cy="70" r="3" />
-          <circle cx="210" cy="140" r="4" />
-          <circle cx="330" cy="60" r="3" />
-          <circle cx="420" cy="190" r="5" />
-          <circle cx="520" cy="95" r="3" />
-          <circle cx="640" cy="160" r="4" />
-          <circle cx="730" cy="60" r="3" />
-          <circle cx="150" cy="250" r="3" />
-          <circle cx="560" cy="270" r="4" />
-        </g>
-        <g stroke="#F5B84B" strokeOpacity=".4" fill="none">
-          <path d="M90 70L210 140M210 140L420 190M420 190L640 160M330 60L420 190M420 190L560 270" />
-        </g>
-        <circle cx="640" cy="160" r="10" fill="#F5B84B" />
-        <circle cx="640" cy="160" r="17" fill="none" stroke="#F5B84B" />
-      </svg>
-      <span>NOW SHOWING</span>
-      <span>YOUR NEAREST POINT IN TASTE SPACE</span>
-    </div>
-  )
-}
 
 function Hero({
   r,
@@ -104,11 +70,21 @@ function Hero({
         </div>
         <div className="txt">
           <p className="eyebrow m-0">Recommended</p>
-          <h1 id="pick">{r.title}</h1>
+          <h1 id="pick">
+            <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
+          </h1>
           <p className="meta m-0">
             {r.year && <span>{r.year}</span>}
             {r.runtime && <span>{r.runtime} min</span>}
           </p>
+          {r.bundle && (
+            <p className="m-0 mt-2 text-sm text-muted">
+              Plus {r.bundle.more} more {r.bundle.franchise} films in your list.{' '}
+              <Link to="/franchises" className="font-semibold text-inherit underline">
+                See the series
+              </Link>
+            </p>
+          )}
           {r.genres.length > 0 && (
             <div className="chips mt-3">
               {r.genres.map((g) => (
@@ -191,7 +167,9 @@ function Beyond({ top, other }: { top: Result; other: Result }) {
       <div className="sp">
         <Poster id={other.tmdb_id} title={other.title} path={other.poster_path} />
         <div>
-          <b className="font-title">{other.title}</b>
+          <b className="font-title">
+            <FilmLink id={other.tmdb_id}>{other.title}</FilmLink>
+          </b>
           <div className="meta">
             {other.year && <span>{other.year}</span>}
             {other.runtime && <span>{other.runtime} min</span>}
@@ -212,7 +190,9 @@ function EnjoyedCard({ e }: { e: Enjoyed }) {
         <Poster id={e.tmdb_id} title={e.title} path={e.poster_path} />
       </div>
       <figcaption>
-        <b>{e.title}</b>
+        <b>
+          <FilmLink id={e.tmdb_id}>{e.title}</FilmLink>
+        </b>
         <small>{e.year}</small>
         {e.rating != null && <Stars rating={e.rating} />}
         <small>{e.avg_match}% avg match</small>
@@ -230,7 +210,12 @@ export function ForYou() {
 function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number) => void }) {
   const q = useRecommendations(profile)
   const meta = useQuery({ queryKey: ['meta'], queryFn: api.meta, staleTime: Infinity })
-  const results = q.data?.pages.flatMap((p) => p.results) ?? []
+  const branchOut = q.data?.pages[0].branch_out ?? []
+  const inBranchOut = new Set(branchOut.map((r) => r.tmdb_id))
+  // a later page can reach films the branch-out row already shows; show each once
+  const results = (q.data?.pages.flatMap((p) => p.results) ?? []).filter(
+    (r, i) => i === 0 || !inBranchOut.has(r.tmdb_id),
+  )
   const [top, ...rest] = results
   const enjoyed = q.data?.pages[0].enjoyed ?? []
   const ratings = new Map(profile.films.map((f) => [f.tmdb_id, f.rating]))
@@ -283,6 +268,22 @@ function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number)
                   {q.isFetchingNextPage ? 'Loading…' : 'Show 10 more'}
                 </button>
               </div>
+            )}
+            {branchOut.length > 0 && (
+              <>
+                <h2 className="sec">
+                  Branch <em>out</em>
+                </h2>
+                <p className="m-0 mb-3 max-w-[62ch] text-sm text-muted">
+                  Still drawn from your taste, but spread away from everything above, with no series
+                  repeated.
+                </p>
+                <div className="row">
+                  {branchOut.map((r) => (
+                    <FilmCard key={r.media_key} r={r} />
+                  ))}
+                </div>
+              </>
             )}
             {q.data?.pages[0].unmatched_films ? (
               <p className="pt-8 text-center text-sm text-muted">

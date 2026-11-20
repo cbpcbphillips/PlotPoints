@@ -200,8 +200,8 @@ Two things worth knowing:
 ## Embeddings & search
 
 `MART.MEDIA_EMBEDDINGS` holds one `VECTOR(FLOAT, 1024)` per title, built by dbt from a labeled
-embedding document (title, year, genres, director, top cast, keywords, tagline, overview) via
-`SNOWFLAKE.CORTEX.EMBED_TEXT_1024` with `snowflake-arctic-embed-l-v2.0`.
+embedding document (genres, director, top cast, keywords, tagline, overview; the title is left out on
+purpose) via `SNOWFLAKE.CORTEX.EMBED_TEXT_1024` with `voyage-multilingual-2`.
 
 The model is **incremental on a document hash** — a rerun embeds only new or changed titles, so
 `just dbt build` is cheap to repeat. Changing `embedding_model` or `embedding_dimension` in

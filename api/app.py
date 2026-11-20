@@ -7,6 +7,7 @@ consented import (and a deletion request) into the S3 inbox, with a write-only c
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from collections import defaultdict, deque
@@ -28,10 +29,19 @@ from api.schemas import (
     DeleteRequest,
     LetterboxdRequest,
     MatchRequest,
+    Member,
     ProfileRequest,
     RecommendRequest,
 )
 from api.tmdb_lookup import TmdbLookup
+
+log = logging.getLogger("plotpoints.api")
+log.setLevel(logging.INFO)
+if not logging.getLogger().handlers and not log.handlers:
+    # uvicorn configures only its own loggers, so without this the access log would go nowhere
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    log.addHandler(_handler)
 
 MAX_POOL = 400  # offset + limit; deeper than this is not a recommendation list any more
 FRANCHISE_POOL = 300  # how far down the ranking franchises are gathered from
@@ -41,6 +51,9 @@ LOOKUP_CAP = 200  # TMDB lookups per import; the rest are reported as unmatched
 WANTED_CAP = 200  # missing-title ids written to the inbox per request
 INFLUENCE_PICKS = 20  # the top picks the "because you enjoyed" row is measured against
 MAX_PROVIDERS_LISTED = 60
+MAX_SIMILAR = 24  # "more like this" is a row, not a list
+CLOSEST_SHOWN = 5  # liked films named on a film page as closest to it
+BUNDLE_LISTED = 8  # films of a bundled series named in the response, in rank order
 
 
 class RateLimiter:
@@ -81,6 +94,7 @@ def create_app(
         app.state.inbox = inbox or Inbox()
         app.state.lookup = lookup or TmdbLookup()
         s: snapshot.Snapshot = app.state.snap
+        log.info("snapshot %s loaded: %d titles, model %s", s.version, len(s), s.embedding_model)
         counts: dict[int, int] = defaultdict(int)
         for ps in s.providers:
             for p in ps:
@@ -103,6 +117,25 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    @app.middleware("http")
+    async def access_log(request: Request, call_next):
+        # Privacy: method, route TEMPLATE (never the raw path or query), status and time only.
+        started = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            log.info(
+                "%s %s %s %dms",
+                request.method,
+                getattr(route, "path", "(no route)"),
+                status,
+                (time.perf_counter() - started) * 1000,
+            )
 
     def client_of(request: Request) -> str:
         fwd = request.headers.get("x-forwarded-for")
@@ -134,7 +167,11 @@ def create_app(
                     f"{m.name} has no rated-above-3-star films in the catalog, so there is "
                     "nothing to compare. Rate a few films you liked on Letterboxd.",
                 )
-            profiles[m.name] = films
+            # liked films from one franchise share a vote (scoring.DAMPEN_POWER)
+            damped = scoring.dampen_franchise_seeds(
+                [w for _, w in films], [s.franchise[i] for i, _ in films]
+            )
+            profiles[m.name] = [(i, w) for (i, _), w in zip(films, damped, strict=True)]
         return profiles, {"unmatched_films": unmatched}
 
     def novelty_of(r: dict) -> int | None:
@@ -177,6 +214,41 @@ def create_app(
                 }
                 for m in r["members"]
             ],
+        }
+
+    def bundle_by_franchise(s: snapshot.Snapshot, ranked: list[dict]) -> list[dict]:
+        """Fold each franchise into its best-ranked film. Standalone films stay as they are.
+
+        Order follows the best film of each franchise, so the list is the ranking with the
+        repeat appearances of a series removed. Each kept row gets `_rest`: the rest of its series,
+        in rank order, for the "+N more" note.
+        """
+        entries: list[dict] = []
+        by_franchise: dict[str, dict] = {}
+        for r in ranked:
+            name = s.franchise[r["index"]]
+            if name is None:
+                entries.append(r)
+            elif name not in by_franchise:
+                by_franchise[name] = {**r, "_rest": []}
+                entries.append(by_franchise[name])
+            else:
+                by_franchise[name]["_rest"].append(r)
+        return entries
+
+    def bundle_info(s: snapshot.Snapshot, r: dict) -> dict:
+        rest = r.get("_rest") or []
+        if not rest:
+            return {"bundle": None}
+        return {
+            "bundle": {
+                "franchise": s.franchise[r["index"]],
+                "more": len(rest),
+                "films": [
+                    {"tmdb_id": x["tmdb_id"], "title": x["title"], "year": x["year"]}
+                    for x in rest[:BUNDLE_LISTED]
+                ],
+            }
         }
 
     def enjoyed_films(s: snapshot.Snapshot, profiles, results: list[dict], films) -> list[dict]:
@@ -242,6 +314,86 @@ def create_app(
             "providers": request.app.state.provider_listing,
         }
 
+    def film_fields(s: snapshot.Snapshot, i: int) -> dict:
+        """What every film card shows, independent of any taste profile."""
+        return {
+            "tmdb_id": int(s.tmdb_id[i]),
+            "media_key": s.media_key[i],
+            "title": s.title[i],
+            "year": int(s.year[i]) or None,
+            "tmdb_rating": None if np.isnan(s.rating[i]) else round(float(s.rating[i]), 1),
+            "runtime": None if np.isnan(s.runtime[i]) else int(s.runtime[i]),
+            "poster_path": s.poster[i],
+            "backdrop_path": s.backdrop[i],
+            "franchise": s.franchise[i],
+            "genres": s.genres[i],
+            "providers": [s.provider_names[p] for p in s.providers[i]],
+        }
+
+    def movie_index(s: snapshot.Snapshot, tmdb_id: int) -> int:
+        i = s.by_tmdb.get(("movie", tmdb_id))
+        if i is None:
+            raise HTTPException(404, "That film is not in the catalog.")
+        return i
+
+    @app.get("/film/{tmdb_id}")
+    def film(tmdb_id: int, request: Request):
+        s = request.app.state.snap
+        i = movie_index(s, tmdb_id)
+        return {
+            **film_fields(s, i),
+            "original_title": s.original_title[i],
+            "tagline": s.tagline[i],
+            "overview": s.overview[i],
+            "directors": s.directors[i],
+            "cast": [{"name": n, "character": c} for n, c in s.cast[i]],
+            "providers_as_of": s.providers_as_of,
+        }
+
+    @app.get("/film/{tmdb_id}/similar")
+    def film_similar(tmdb_id: int, request: Request, limit: int = 12):
+        s = request.app.state.snap
+        i = movie_index(s, tmdb_id)
+        found = scoring.similar_to(s, i, n=max(1, min(limit, MAX_SIMILAR)))
+        return {
+            "films": [
+                {**film_fields(s, r["index"]), "match": round(r["cosine"] * 100)} for r in found
+            ]
+        }
+
+    @app.post("/film/{tmdb_id}/for-me")
+    def film_for_me(tmdb_id: int, body: ProfileRequest, request: Request):
+        """How one film sits against a person's own films: the closest ones they liked.
+
+        Like /recommend, nothing is stored; the browser sends the films it already holds. A person
+        with nothing rated above 3 stars gets the same 422 as /recommend, which the page treats as
+        "nothing to show".
+        """
+        s = request.app.state.snap
+        i = movie_index(s, tmdb_id)
+        req = RecommendRequest(members=[Member(name="me", films=body.films)])
+        profiles, _ = to_profiles(s, req)
+        closest = scoring.closest_rated(s, profiles, i, n=CLOSEST_SHOWN)
+        mine = next((f for f in body.films if f.tmdb_id == tmdb_id), None)
+        return {
+            "seen": mine is not None,
+            "rating": None if mine is None else mine.rating,
+            # the same number the recommendations show: mean cosine over the three closest
+            "match": round(float(np.mean([c["cosine"] for c in closest[:3]])) * 100)
+            if closest
+            else None,
+            "closest": [
+                {
+                    "tmdb_id": c["tmdb_id"],
+                    "title": c["title"],
+                    "year": int(s.year[c["index"]]) or None,
+                    "poster_path": s.poster[c["index"]],
+                    "match": round(c["cosine"] * 100),
+                }
+                for c in closest
+            ],
+        }
+
     @app.post("/import/letterboxd")
     def import_letterboxd(body: LetterboxdRequest, request: Request):
         limiter.check(client_of(request), "rss", limit=10)
@@ -275,8 +427,13 @@ def create_app(
         try:
             limiter.check(client_of(request), "wanted", limit=20)
             request.app.state.inbox.store_wanted(sorted(ids)[:WANTED_CAP])
-        except Exception:  # noqa: BLE001 - deliberately best effort
-            pass
+        except HTTPException:
+            log.info("wanted-title write skipped: rate limited (%d titles)", len(ids))
+        except Exception as exc:  # noqa: BLE001 - deliberately best effort
+            # the exception CLASS only: a message could carry a bucket key or path
+            log.warning(
+                "wanted-title write failed (%s), %d titles dropped", type(exc).__name__, len(ids)
+            )
 
     @app.post("/match")
     def match(body: MatchRequest, request: Request):
@@ -328,6 +485,18 @@ def create_app(
                     )
             rest = still + later
         record_wanted(request, missing)
+        # counts only: never titles, ratings or anything that identifies the person
+        log.info(
+            "match: %d rows -> %d matched, %d missing, %d tv, %d unmatched, %d ambiguous, "
+            "%d lookups skipped",
+            len(body.rows),
+            len(films),
+            len(missing),
+            len(tv),
+            len(rest),
+            res["ambiguous"],
+            skipped,
+        )
         return {
             "films": films,
             "missing": missing,
@@ -344,8 +513,19 @@ def create_app(
             raise HTTPException(422, f"offset + limit may not exceed {MAX_POOL}.")
         profiles, info = to_profiles(s, body)
         allow = allow_mask(s, body.providers)
-        results = scoring.rank(s, profiles, limit=body.offset + body.limit, allow=allow)
-        page = [present(s, r) for r in results[body.offset :]]
+        if body.bundle:
+            # Rank the whole pool, then fold each franchise into its best-ranked film; paging is
+            # over the folded entries. The ranking itself is untouched.
+            pool = scoring.rank(s, profiles, limit=MAX_POOL, allow=allow)
+            entries = bundle_by_franchise(s, pool)
+            results = entries[: body.offset + body.limit]
+            has_more = len(entries) > body.offset + body.limit
+            page = [present(s, r) | bundle_info(s, r) for r in results[body.offset :]]
+        else:
+            pool = None
+            results = scoring.rank(s, profiles, limit=body.offset + body.limit, allow=allow)
+            has_more = len(results) == body.offset + body.limit
+            page = [present(s, r) for r in results[body.offset :]]
         if allow is not None:
             # Where each title sits in the UNFILTERED ranking, so "best on Netflix" can say it is
             # overall #22. Filtering a finished list instead would be dishonest, which is why the
@@ -359,13 +539,21 @@ def create_app(
         enjoyed = None
         if body.offset == 0 and not body.providers and len(profiles) == 1:
             enjoyed = enjoyed_films(s, profiles, results, body.members[0].films)
+        branch_out = None
+        if body.branch_out and body.offset == 0 and not body.providers and pool is not None:
+            # varied from the page above it: nothing already shown, none of its franchises
+            shown = [r["index"] for r in results]
+            branch_out = [
+                present(s, r) for r in scoring.diversify(s, pool, body.branch_out, shown=shown)
+            ]
         return {
             "snapshot": s.version,
             "group": len(profiles) > 1,
             "providers": body.providers,
             "results": page,
             "enjoyed": enjoyed,
-            "has_more": len(results) == body.offset + body.limit,
+            "branch_out": branch_out,
+            "has_more": has_more,
             **info,
         }
 

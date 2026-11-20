@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { FilmLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
 import { Shell } from '../components/Shell'
 import { Gauge, Stars } from '../components/Signals'
@@ -122,7 +123,9 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
         </div>
         <div className="bm">
           <span className="eyebrow">Best match · unseen</span>
-          <b>{best.title}</b>
+          <b>
+            <FilmLink id={best.tmdb_id}>{best.title}</FilmLink>
+          </b>
           <span className="text-[13px] text-muted">
             {best.year}
             {best.tmdb_rating != null && ` · TMDB ${best.tmdb_rating.toFixed(1)}`}
@@ -142,7 +145,9 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
                 <Poster id={e.id} title={e.title} path={e.poster} small />
               </div>
               <figcaption>
-                <b>{e.title}</b>
+                <b>
+                  <FilmLink id={e.id}>{e.title}</FilmLink>
+                </b>
                 <small>
                   {e.year}
                   {e.tmdb != null && ` · TMDB ${e.tmdb.toFixed(1)}`}

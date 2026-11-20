@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Film } from './pages/Film'
 import { Franchises } from './pages/Franchises'
 import { ForYou } from './pages/ForYou'
 import { Landing, ImportReturning } from './pages/Import'
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/for-you" element={<ForYou />} />
             <Route path="/franchises" element={<Franchises />} />
             <Route path="/streaming" element={<Streaming />} />
+            <Route path="/film/:tmdbId" element={<Film />} />
             <Route path="/import" element={<ImportReturning />} />
             <Route path="/about" element={<About />} />
             <Route path="/privacy" element={<Privacy />} />

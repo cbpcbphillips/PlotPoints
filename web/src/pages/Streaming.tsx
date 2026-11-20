@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { FilmLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
 import { Shell } from '../components/Shell'
 import { Gauge, Sig } from '../components/Signals'
@@ -174,7 +175,9 @@ function StreamingFor({ profile }: { profile: Profile }) {
                     <p className="eyebrow m-0">
                       {skipped + i + 1} of {picks.length} · {on.join(' · ')}
                     </p>
-                    <h2>{r.title}</h2>
+                    <h2>
+                      <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
+                    </h2>
                     <p className="m-0 text-muted">
                       {[
                         r.year,
@@ -217,7 +220,9 @@ function StreamingFor({ profile }: { profile: Profile }) {
               <div key={r.media_key} className="cc">
                 <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} small />
                 <div>
-                  <b>{r.title}</b>
+                  <b>
+                    <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
+                  </b>
                   <small>{r.year}</small>
                   <span className="pc">{r.score.toFixed(1)} score</span>
                 </div>

@@ -10,7 +10,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        // PLOTPOINTS_API_PROXY lets a second API on another port be used when 8000 is taken
+        target: process.env.PLOTPOINTS_API_PROXY ?? 'http://127.0.0.1:8000',
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

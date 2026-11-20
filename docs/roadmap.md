@@ -56,8 +56,8 @@ Star schema, built on the RAW tables:
 ## Vectorization (Cortex — BUILT)
 
 - [int_media_document](../plotpoints_dbt/models/intermediate/int_media_document.sql) builds one
-  labeled **embedding document** per title from the star schema — title, year, type, genres,
-  director(s), top 10 cast in billing order, keywords, tagline, overview — plus a `document_hash`.
+  labeled **embedding document** per title from the star schema — type, genres, director(s), top 10
+  cast in billing order, keywords, tagline, overview (no title; see decision 4) — plus a `document_hash`.
 - [media_embeddings](../plotpoints_dbt/models/marts/media_embeddings.sql) embeds it via
   `SNOWFLAKE.CORTEX.EMBED_TEXT_1024` into a `VECTOR(FLOAT, 1024)` column in
   `MART.MEDIA_EMBEDDINGS`, keyed by `media_key`. This is the vectorized catalog corpus.
@@ -157,7 +157,7 @@ pool makes the rate limit hold across everything Airflow schedules.
 - **Phase 3 — dbt project — DONE:** sources on `RAW.*`, staging views + intermediate + marts
   (dims/bridges/fact), 20 schema tests. `just dbt build` runs green.
 - **Phase 4 — Cortex embeddings — DONE:** `int_media_document` + `media_embeddings` (incremental,
-  `arctic-embed-l-v2.0`, 1024-dim) → `MART.MEDIA_EMBEDDINGS`, plus `just search` for semantic
+  `voyage-multilingual-2`, 1024-dim, since 2026-11-19; arctic before) → `MART.MEDIA_EMBEDDINGS`, plus `just search` for semantic
   lookup. `just dbt build` runs green at PASS=45.
 - **Phase 5 — Orchestration + monitoring + containerization — DONE:** the Airflow DAGs above, the
   dbt monitoring models, and the Docker image. Exit criterion met on 2026-11-16: the real catalog
@@ -204,14 +204,87 @@ pool makes the rate limit hold across everything Airflow schedules.
    title-on-colour placeholder (which stays as the fallback). They carry the same attribution
    requirement as the data, so item 3 matters more now.
 
+### Phase 9 — Movie detail page (BUILT 2026-11-19; browser pass and a Docker run pending)
+
+Clicking a film card, title or poster (For You, Franchises, Streaming, the hero) opens
+`/film/:tmdbId`. Built:
+
+- **Snapshot.** A new optional `details.json` beside `catalog.json` (overview, tagline, directors,
+  top 10 cast with characters), written by `publish_snapshot.py` from `DIM_MEDIA`,
+  `BRIDGE_MEDIA_PERSON` and `DIM_PERSON` (three read-only queries) and folded into the version hash
+  only when present, so old snapshots keep their versions and load with empty text. First real
+  build, snapshot `9f7e186bc7d4` (arctic vectors; superseded by `c91a982e8db0`, Voyage): 28,555 titles, `details.json` 18 MB (vectors 58 MB, catalog 6 MB);
+  coverage overview 99.9%, directors 99.9%, cast 99.6%, tagline 69.2%.
+- **API.** `GET /film/{tmdb_id}` (card fields plus original title, tagline, overview, directors,
+  cast, providers-as-of; 404 if absent) and `GET /film/{tmdb_id}/similar?limit=` (capped at 24).
+  `scoring.similar_to` is plain cosine over the unit vectors with the recommender's candidate rule
+  (60-minute floor, 100-vote floor, never the film itself); it is not z-scored because one seed
+  rescales every candidate the same way, so the order is identical.
+- **Frontend.** `pages/Film.tsx`: backdrop, poster, title, meta, genres, tagline, overview,
+  director, cast, providers with the JustWatch/"as of" label, a Where-to-watch button (TMDB's
+  `/watch` page, the same one the hero uses), a TMDB link, and a "more like this" row. `Backdrop`
+  moved to `components/` and `FilmLink` is the one internal link used by every title and poster.
+  `web/public/_redirects` gives Cloudflare Pages its SPA fallback.
+- **Tests.** `tests/test_film.py` (similar vs brute force, exclusions, snapshot round trip with and
+  without details, endpoints, 404s, log privacy) and `web/src/lib/film.test.ts`.
+
+Decisions made while building: the URL is `tmdb_id` (stable across rebuilds, movies only today;
+becomes `movie-603` style when TV arrives); person headshots deferred (`dim_person` has no
+`profile_path`, adding it is a dbt change and a warehouse build); "where to watch" is the single
+TMDB/JustWatch page, since TMDB gives no per-provider deep links and `_us_watch_providers()` drops
+even the region link.
+
+Built afterwards (2026-11-19): the taste-aware block. `POST /film/{id}/for-me` (the browser sends the
+films it already holds, nothing stored) returns the viewer's five liked films closest to this one,
+by plain cosine so the order matches the percentages shown, plus "your match" (the mean of the
+closest three, the same number the recommendations show). A film the viewer has already logged
+says so and shows its rating instead of a match; no import shows an invitation to import; someone
+with nothing rated above 3 stars simply gets no block. (`scoring.closest_rated`; it deliberately
+does not use the recommender's standardized "because" ordering, whose percentages are not in
+order.)
+
+Not built: a person page, trailers, keywords. SEO is unsolved: a client-rendered page
+gives search engines nothing, so findable film pages need prerendering, which is a hosting decision.
+
+Verified 2026-11-19 in the browser pane against snapshot `9f7e186bc7d4`: desktop, 768 and 375 px,
+light and dark; a film with no tagline and no provider (*Return*) renders cleanly; unknown and
+non-numeric ids show the not-found state; clicking a "more like this" title navigates and scrolls to
+top; no console errors; no horizontal scroll on a phone. `/film/{id}/similar` takes about 40 ms.
+The API process held about 300 MB resident (up from the ~225 MB measured at 23.7k titles; the
+catalog is now 28.6k and `details.json` is loaded). **Not done:** the Docker image run (Docker
+Desktop was not running), so the in-container figure is still unmeasured; keep at least 512 MB on
+the host. Also changed: `api/app.py` now attaches a handler to its logger, because uvicorn
+configures only its own loggers and the access log would otherwise have gone nowhere; and
+`web/vite.config.ts` reads `PLOTPOINTS_API_PROXY` so a second API on another port can be used.
+
+### Road to deploy (checklist, 2026-11-19)
+
+In rough order; each is described elsewhere in this file, gathered here so there is one list. The
+commands are in [deploy.md](deploy.md) (written, not yet run).
+
+1. [x] Choose the redesign direction from `docs/mockups/` and port it. DONE 2026-11-19.
+2. [x] Build the movie detail page (Phase 9). Built; browser pass pending.
+3. [ ] Settle TMDB licensing before ads (see "Licensing conflict"); add the TMDB logo to About and
+       the detail page; keep the JustWatch attribution and "as of" label.
+4. [ ] AWS: inbox IAM users, then one real consent -> `user-ingest` -> delete round trip;
+       `PLOTPOINTS_INBOX=s3`.
+5. [x] Verify the Letterboxd export import on a real zip in the browser. DONE 2026-11-19.
+6. [ ] Pick the API host (Cloud Run or Render), deploy the Docker image, host `web/dist`, set
+       `VITE_API_URL` and `PLOTPOINTS_CORS_ORIGINS`.
+7. [x] API request logging and import counters (decision 15, step 4). DONE 2026-11-19: one line per
+       request (method, route template, status, ms), a snapshot line at start-up, a counts-only
+       line per `/match`, and the wanted-title write now warns instead of failing silently. A test
+       asserts no title or id appears in the logs. Counters beyond the per-import line were not
+       added.
+8. [ ] Ads, only after 3 and a deployed domain exist.
+
 ### Where we are (2026-11-18)
 
 Phases 0-8 are built and run locally end to end; **nothing is deployed**. The stage is *Phase 9:
 redesign, posters and monetisation, then deploy*.
 
-- **UI redesign in progress.** `web/` is the v0 (title-on-color tiles). Six alternative directions
-  are mocked in `docs/mockups/` (constellation, projector noir, ticket stub, modernist poster, slate
-  dots, red carpet); one has to be chosen and ported before the frontend is called done.
+- **UI redesign: done** (2026-11-19). The six directions in `docs/mockups/` were the candidates; one
+  was chosen and ported.
 - **Ad rails (placeholder).** `Shell.tsx` reserves a 160x600 sticky slot either side of the 1200px
   column, shown only at >=1600px so narrower screens never reflow. Each holds a "please disable your
   adblocker so we can keep PlotPoints free for all" card standing in for the ad tag. No network is
@@ -230,7 +303,7 @@ redesign, posters and monetisation, then deploy*.
   side of that; get the commercial terms (or an alternative image/metadata source) settled before
   any ad network goes live.
 - **Still outstanding** from the list above: IAM changes and a real inbox round trip, host choice,
-  TMDB logo, and verifying the export import on a real Letterboxd zip.
+  and the TMDB logo. The export import is verified on a real Letterboxd zip.
 
 ### Where the data actually stands
 
@@ -266,15 +339,41 @@ only on a synthetic split of it.
    via `source_rank`. `DIARY_ENTRIES` keeps its full payload, so a watched title that isn't in the
    catalog still resolves.
 
-4. **Embedding document + model (Phase 4).** Field set is **theme + people**: title, year, type,
-   genres, director(s), top 10 cast in billing order, keywords, tagline, overview — assembled from
+4. **Embedding document + model (Phase 4; revised 2026-11-19, see below).** Field set is **theme +
+   people**: type, genres, director(s), top 10 cast in billing order, keywords, tagline, overview — assembled from
    the star schema (not by re-flattening `record`) so it stays consistent with the tested marts.
-   People are included deliberately: director/actor affinity drives a lot of real taste. Model is
-   **`snowflake-arctic-embed-l-v2.0` at 1024 dims** (all seven Cortex models are available in this
-   region; arctic-l was chosen for retrieval quality and multilingual handling). Assembly uses
+   People are included deliberately: director/actor affinity drives a lot of real taste. Originally the
+   model was `snowflake-arctic-embed-l-v2.0` at 1024 dims, with the title and year as the first line;
+   see the revision below. Assembly uses
    `array_construct_compact` so absent fields drop their whole line rather than leaving a dangling
    label, and `listagg` ordering is deterministic — anything non-deterministic would re-embed the
    entire catalog on every run.
+
+   **Revision, 2026-11-19: no title in the document, and Voyage.** With the title on the first line
+   and a character who shares its name in the overview, nearest neighbours were films whose *titles*
+   share a word: *Good Will Hunting* -> *Happy Hunting*, *MouseHunt*; *Moneyball* -> *Hardball*,
+   *Rollerball*, *Cannonball*; *Heat* -> *Red Heat*, *The Heat*, *Dead Heat*. Measured on 400 seeds
+   over the whole catalog, 40.2% of each film's ten neighbours shared a title word (0.3% for random
+   pairs; 30.3% even when same-franchise films, the legitimate case, are ignored).
+   Fix, in `int_media_document.sql` and the `strip_title` macro: drop the title and original-title
+   lines, and replace the title in the overview and tagline with "the film" and adjacent word pairs
+   of it with "the character" (case-sensitive, word-bounded, never single-word titles, never
+   stopword or short-word pairs; about 8% of documents change). Tested first on a 2,411-film sample
+   (read-only `SELECT`s, about a quarter of a catalog embed three times): title-word neighbours fell
+   from 33.7% to about 12% for every variant, dropping the title line did nearly all of it, and
+   `voyage-multilingual-2` gave the most thematic neighbours by eye (*La La Land* for *Whiplash*,
+   *The Big Short* for *Moneyball*) but that is four hand-read examples, not a measured win.
+   Result on the full catalog after the re-embed (28,555 titles, 125 s): 16.0% of neighbours share a
+   title word (6.5% ignoring same franchise), *Good Will Hunting* -> *Finding Forrester*, *Dead
+   Poets Society*, *A Beautiful Mind*; *Heat* -> *Thief*, *Heist*, *The Score*, *The Departed*;
+   *Moneyball* -> *Million Dollar Arm*, *The Big Short*, *For Love of the Game*. The numpy-vs-SQL
+   equivalence test still passes on the new vectors. Known cost of the pair rule: it cannot tell a
+   character name from a franchise or person name, so an overview's "Assassin's Creed" or "Dave
+   Chappelle" can become "the character". Two bugs the first run exposed and are fixed: `listagg`
+   over no usable pairs returns `''`, not NULL, and an empty pattern matched at every word
+   boundary, mangling the text (caught by reading samples before embedding). The 2014 *Whiplash*
+   that kept topping the experiment was the real film; the seed was the 18-minute 2013 short that
+   shares its title, which the candidate rules already exclude.
 
 5. **Catalog vote floor: 100 (Phase 5).** Sampled TMDB before choosing, rather than guessing at
    how "niche" a floor was. Acclaimed arthouse mostly clears 200 already — 10 of 12 sampled films
@@ -411,7 +510,7 @@ only on a synthetic split of it.
    export (a CSV of full history) would lift it, but it is a manual user upload rather than a feed,
    which would change the shape of `diary_ingest` and of the API's onboarding flow. It also decides
    whether taste clustering is viable at all (it wants ~30+ rated films).
-3. **Query-side prefixing (free-text search only).** arctic-embed models are trained for asymmetric
+3. **Query-side prefixing (free-text search only).** The earlier arctic-embed models were trained for asymmetric
    retrieval and conventionally want a query prefix ("Represent this sentence for searching relevant
    passages: "); `just search` embeds the raw string. This no longer touches recommendations, which
    compare film documents with film documents (symmetric), only free-text search.
@@ -420,11 +519,36 @@ only on a synthetic split of it.
    the full catalog the quality discount is mild (most results x0.83-1.0) and the dislike penalty
    small (<= ~0.35 against scores of 2-4). Whether that balance is right is a reading of the output,
    not a number to derive.
-5a. **Franchise saturation.** For Carson's diary, 6 of the top 10 are Spider-Man films and 11 of 20
-   are Marvel/DC. This is the scoring working as designed: three liked Spider-Man films give every
-   Spider-Man film a perfect top-3, while one diary film each for Whiplash/Good Will Hunting/
-   Moneyball cannot. Options, none applied: cap results per TMDB `collection_id`; re-rank for
-   diversity (MMR) over the top-100; or cluster the liked films and take the best few per cluster.
+5a. **Franchise saturation. BUILT 2026-11-19** (the options were compared on a real 14-liked-film diary
+   first). Three changes together:
+   - *Seed dampening* (`scoring.dampen_franchise_seeds`, `DAMPEN_POWER = 0.5`): a person's liked films
+     from one franchise share a vote, each weighted `1 / sqrt(k)`. This is the root-cause fix: three
+     liked Spider-Man films used to give every Spider-Man-adjacent title a perfect top-3 while a
+     one-off taste (one film each for Whiplash, Good Will Hunting, Moneyball) could never fill three
+     slots. It is applied where a profile is built (`api.to_profiles`, `recommend.build_profiles`), so
+     the SQL and numpy scorers receive identical weights and the equivalence test still passes.
+     0.5 is a reasoned default, not fitted: 1.0 would count three films as one, 0.0 is the old
+     behaviour.
+   - *Bundling* (`POST /recommend` with `bundle: true`): the ranking is folded so each franchise
+     appears once, as its best-ranked film with a "+N more" note, and the freed slots go to the next
+     titles. Ranking untouched; paging is over the folded entries. The For You hero and reel use it;
+     Streaming does not yet.
+   - *"Branch out" row* (`branch_out: N`, first unfiltered page only): `scoring.diversify`, a
+     maximal-marginal-relevance re-rank of the pool (lambda 0.45) that never returns anything already
+     shown, skips the franchises already shown, and takes at most one film per franchise. A film in
+     it is removed from later pages of the main reel so it appears once. This is spread, not the
+     real wildcard of 5c: everything in it still comes from the person's own ranking.
+   Result on the sample diary: the top 22 is now almost all drama and sci-fi picks (*La La Land*, *A
+   Beautiful Mind*, *Dead Poets Society*, *The Martian*, *Moon*, *Oppenheimer*) with Spider-Man as
+   one bundled entry; Marvel moves to the branch-out row (*Avengers: Infinity War*, overall #33).
+   Honest caveat: with dampening the Marvel films fall out of the top 20 for this diary, which
+   reads right for these ratings but is a judgement, so `DAMPEN_POWER` is the knob to turn.
+   *Franchise data fixed along the way:* TMDB gives *Shang-Chi*, *Thunderbolts\**, *Eternals*,
+   *Black Widow*, *Justice League* and others no collection, so they were untagged. `dim_media` now
+   falls back to a shared-universe keyword (`seeds/franchise_keywords.csv`: the MCU and the DCEU),
+   between the explicit merge seed and the collection name. 18 MCU and 6 DCEU films gained a
+   franchise; no re-embedding (the document does not contain the franchise). Not done: MMR for the
+   main list, taste clusters, a real wildcard.
 5b. **"Unwatched" is only as good as the history.** The RSS feed shows 17 films, so *Iron Man*,
    *Inception* and *Avengers: Endgame* appear because the system cannot know they were seen long
    ago. This is the RSS-cap decision again, and it is the biggest limit on how good the output can
@@ -475,8 +599,7 @@ only on a synthetic split of it.
    unmatched. Combining RSS and CSV rows for one film must not trigger the rewatch bonus.
    **Built in Phase 7-8** (see decision 9): the browser parses the export, `/match` resolves title+year
    (a year either side tolerated, the most-voted film winning and the row flagged ambiguous), and
-   `build_profiles` counts a rewatch only from RSS rows. Not yet verified on a real export zip, only
-   on a synthetic one in unit tests.
+   `build_profiles` counts a rewatch only from RSS rows. Verified on a real export zip 2026-11-19.
    **Rebuilt 2026-11-19 and verified on three real exports.** `api/matching.py` now matches in tiers,
    each tried only when the narrower one finds nothing (so a remake's exact year always wins):
    strict title at the exact year, then +-1; a loose title (accents folded, `&` = and, II = 2, one

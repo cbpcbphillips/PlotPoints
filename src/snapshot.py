@@ -10,6 +10,8 @@ Layout of one snapshot directory:
                  returns (float16 costs ~1e-3 of absolute error, far below the per-seed spread of
                  ~0.05 the scorer standardizes by)
   catalog.json   columnar metadata, row-aligned with vectors.npy
+  details.json   optional, columnar and row-aligned: overview, tagline, directors, cast (name,
+                 character) for the film page. Older snapshots lack it and serve empty text.
   manifest.json  version (a content hash), embedding model, counts, when the provider data is from
 """
 
@@ -25,6 +27,7 @@ import numpy as np
 VECTORS = "vectors.npy"
 CATALOG = "catalog.json"
 MANIFEST = "manifest.json"
+DETAILS = "details.json"
 
 
 @dataclass
@@ -51,6 +54,11 @@ class Snapshot:
     # Added after the first snapshots shipped; older snapshots load with these all None.
     original_title: list[str | None] = field(default_factory=list)
     backdrop: list[str | None] = field(default_factory=list)
+    # Film-page text, from details.json. Older snapshots have no such file; these pad to empty.
+    overview: list[str | None] = field(default_factory=list)
+    tagline: list[str | None] = field(default_factory=list)
+    directors: list[list[str]] = field(default_factory=list)
+    cast: list[list[list[str | None]]] = field(default_factory=list)  # per title: [name, character]
     by_key: dict[str, int] = field(default_factory=dict)
     by_tmdb: dict[tuple[str, int], int] = field(default_factory=dict)
     by_title_year: dict[tuple[str, int], list[int]] = field(default_factory=dict)
@@ -61,6 +69,14 @@ class Snapshot:
             self.original_title = [None] * n
         if len(self.backdrop) != n:
             self.backdrop = [None] * n
+        if len(self.overview) != n:
+            self.overview = [None] * n
+        if len(self.tagline) != n:
+            self.tagline = [None] * n
+        if len(self.directors) != n:
+            self.directors = [[] for _ in range(n)]
+        if len(self.cast) != n:
+            self.cast = [[] for _ in range(n)]
         self.by_key = {k: i for i, k in enumerate(self.media_key)}
         self.by_tmdb = {
             (t, int(i)): n
@@ -91,10 +107,12 @@ def normalize_rows(matrix: np.ndarray) -> np.ndarray:
     return m / np.where(norms == 0, 1, norms)
 
 
-def content_version(vectors16: np.ndarray, catalog: dict) -> str:
+def content_version(vectors16: np.ndarray, catalog: dict, details: dict | None = None) -> str:
     h = hashlib.sha256()
     h.update(vectors16.tobytes())
     h.update(json.dumps(catalog, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    if details:  # absent details leave the hash exactly as before, so old versions stay valid
+        h.update(json.dumps(details, sort_keys=True, ensure_ascii=False).encode("utf-8"))
     return h.hexdigest()[:12]
 
 
@@ -106,15 +124,20 @@ def save(
     embedding_model: str,
     created_at: str,
     providers_as_of: str,
+    details: dict | None = None,
 ) -> dict:
     """Write a snapshot directory and return its manifest. `vectors` need not be normalized."""
     directory.mkdir(parents=True, exist_ok=True)
     v16 = normalize_rows(vectors).astype(np.float16)
-    version = content_version(v16, catalog)
+    version = content_version(v16, catalog, details)
     np.save(directory / VECTORS, v16)
     (directory / CATALOG).write_text(
         json.dumps(catalog, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
+    if details:
+        (directory / DETAILS).write_text(
+            json.dumps(details, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+        )
     manifest = {
         "version": version,
         "embedding_model": embedding_model,
@@ -133,6 +156,8 @@ def load(directory: Path) -> Snapshot:
     manifest = json.loads((directory / MANIFEST).read_text(encoding="utf-8"))
     cat = json.loads((directory / CATALOG).read_text(encoding="utf-8"))
     vectors = np.load(directory / VECTORS).astype(np.float32)
+    details_path = directory / DETAILS
+    det = json.loads(details_path.read_text(encoding="utf-8")) if details_path.exists() else {}
     nan = float("nan")
     return Snapshot(
         version=manifest["version"],
@@ -156,4 +181,8 @@ def load(directory: Path) -> Snapshot:
         provider_names=cat["provider_names"],
         original_title=cat.get("original_title") or [],
         backdrop=cat.get("backdrop") or [],
+        overview=det.get("overview") or [],
+        tagline=det.get("tagline") or [],
+        directors=det.get("directors") or [],
+        cast=det.get("cast") or [],
     )

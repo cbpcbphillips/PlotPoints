@@ -20,7 +20,7 @@ load_dotenv()
 
 # Must match the dbt vars in plotpoints_dbt/dbt_project.yml -- embedding a query with
 # a different model than the corpus produces silently meaningless similarity scores.
-EMBEDDING_MODEL = "snowflake-arctic-embed-l-v2.0"
+EMBEDDING_MODEL = "voyage-multilingual-2"
 EMBEDDING_DIMENSION = 1024
 
 SEARCH_SQL = """

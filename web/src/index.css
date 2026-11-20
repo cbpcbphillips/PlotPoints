@@ -60,7 +60,10 @@
     --shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
     --beam: 0.07;
     --vig: rgba(5, 7, 16, 0.6);
-    --bg-pattern: radial-gradient(rgba(143, 160, 255, 0.07) 1px, transparent 1.3px);
+    --bg-pattern:
+      radial-gradient(rgba(143, 160, 255, 0.24) 1px, transparent 1.4px),
+      radial-gradient(rgba(245, 184, 75, 0.12) 1px, transparent 1.3px);
+    --bg-pos: 0 0, 14px 14px;
     color-scheme: dark;
   }
 }
@@ -85,7 +88,10 @@
   --shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
   --beam: 0.07;
   --vig: rgba(5, 7, 16, 0.6);
-  --bg-pattern: radial-gradient(rgba(143, 160, 255, 0.07) 1px, transparent 1.3px);
+  --bg-pattern:
+    radial-gradient(rgba(143, 160, 255, 0.24) 1px, transparent 1.4px),
+    radial-gradient(rgba(245, 184, 75, 0.12) 1px, transparent 1.3px);
+  --bg-pos: 0 0, 14px 14px;
   color-scheme: dark;
 }
 
@@ -104,6 +110,39 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 }
 
+/* Page zoom for very large screens (see .zoomcol). On :root so the ad rails, which sit outside the
+   zoomed column, can measure the zoomed top bar too: --rail-top is the bar (60px, zoomed) plus the
+   24px gap, and is where a rail starts. */
+:root {
+  --z: 1;
+  --rail-top: calc(60px * var(--z) + 24px);
+}
+@media (min-width: 2100px) {
+  :root {
+    --z: 1.05;
+  }
+}
+@media (min-width: 2300px) {
+  :root {
+    --z: 1.15;
+  }
+}
+@media (min-width: 2560px) {
+  :root {
+    --z: 1.28;
+  }
+}
+@media (min-width: 2900px) {
+  :root {
+    --z: 1.5;
+  }
+}
+@media (min-width: 3300px) {
+  :root {
+    --z: 1.75;
+  }
+}
+
 html {
   background: var(--bg);
 }
@@ -112,6 +151,7 @@ body {
   background-color: var(--bg);
   background-image: var(--bg-pattern);
   background-size: 28px 28px;
+  background-position: var(--bg-pos, 0 0);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
@@ -169,45 +209,35 @@ body::before {
      scaling up (CSS zoom) instead of leaving a wide empty margin. --z also keeps the full-height
      minimum honest, since vh would otherwise be multiplied by the zoom. */
   .zoomcol {
-    --z: 1;
     zoom: var(--z);
     min-height: calc(100vh / var(--z));
-  }
-  @media (min-width: 2100px) {
-    .zoomcol {
-      --z: 1.05;
-    }
-  }
-  @media (min-width: 2300px) {
-    .zoomcol {
-      --z: 1.15;
-    }
-  }
-  @media (min-width: 2560px) {
-    .zoomcol {
-      --z: 1.28;
-    }
-  }
-  @media (min-width: 2900px) {
-    .zoomcol {
-      --z: 1.5;
-    }
-  }
-  @media (min-width: 3300px) {
-    .zoomcol {
-      --z: 1.75;
-    }
   }
   .font-title {
     font-family: var(--font-title);
   }
+  /* The bar's contents live in the page column, so they line up with the page. Its background and
+     bottom rule are drawn by ::before, which is as wide as the window and centred on the column
+     (the column is centred in the window), so the bar reads as one strip across the whole top
+     instead of a box that stops at the column edge. Behind the contents: z-index -1 inside .top's
+     own stacking context. body clips the sideways overflow. */
   .top {
     position: sticky;
     top: 0;
     z-index: 20;
+  }
+  .top::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 100vw;
+    transform: translateX(-50%);
     background: color-mix(in srgb, var(--bg) 50%, transparent);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
+    pointer-events: none;
   }
   .bar {
     display: flex;
@@ -629,9 +659,10 @@ body::before {
   }
   .lb {
     position: relative;
-    border-radius: 16px;
+    border-radius: 16px 16px 0 0;
     overflow: hidden;
     border: 1px solid var(--line);
+    border-bottom: 0;
   }
   .backdrop {
     aspect-ratio: 2.39/1;
@@ -688,11 +719,19 @@ body::before {
     grid-template-columns: 210px 1fr;
     gap: 32px;
     position: relative;
+    padding: 0 26px 28px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 0;
+    border-radius: 0 0 16px 16px;
+  }
+  .hero-body .pwrap {
     margin-top: -84px;
-    padding: 0 26px;
+    position: relative;
+    z-index: 2;
   }
   .hero-body .txt {
-    padding-top: 98px;
+    padding-top: 26px;
   }
   .hero h1 {
     font: 700 clamp(40px, 5.4vw, 68px) / 0.98 var(--font-title);
@@ -813,11 +852,13 @@ body::before {
     .hero-body {
       grid-template-columns: 120px 1fr;
       gap: 16px;
-      padding: 0 8px;
+      padding: 0 14px 20px;
+    }
+    .hero-body .pwrap {
       margin-top: -44px;
     }
     .hero-body .txt {
-      padding-top: 52px;
+      padding-top: 16px;
     }
     .hero h1 {
       font-size: 34px;

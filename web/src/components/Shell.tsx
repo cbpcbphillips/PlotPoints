@@ -18,7 +18,11 @@ function ThemeButton() {
   )
 }
 
-/** Sticky, translucent top bar: brand, the four sections, the theme switch. */
+/**
+ * Sticky, translucent top bar: brand, the four sections, the theme switch. It sits in the page
+ * column so its contents line up with the page, while its background and bottom rule are drawn
+ * across the whole window by `.top::before` (see index.css).
+ */
 function TopBar({ nav }: { nav: boolean }) {
   return (
     <header className="top">
@@ -63,12 +67,12 @@ function Footer() {
 function AdSlot({ side }: { side: 'left' | 'right' }) {
   // Width is the margin beside the 1240px column, from a 160px floor up to a 300px cap (the
   // standard half-page ad). Beyond that the content scales up instead (.zoomcol in index.css).
-  // Height is twice the width, capped at the viewport, 600px minimum. Text is sized in
+  // Height is twice the width, capped at the viewport below the sticky top bar (--rail-top, see index.css), 600px minimum. Text is sized in
   // container-width units so the card scales with it.
   return (
     <aside
       aria-label={`Sponsored (${side})`}
-      className="@container sticky top-6 hidden [--w:clamp(160px,calc((100vw_-_1240px)/2_-_48px),300px)] h-[max(600px,min(calc(var(--w)*2),calc(100vh_-_48px)))] w-(--w) shrink-0 self-start rounded-lg border border-dashed border-line bg-surface text-center min-[1400px]:block"
+      className="@container mt-(--rail-top) sticky top-(--rail-top) hidden [--w:clamp(160px,calc((100vw_-_1240px)/2_-_48px),300px)] h-[max(600px,min(calc(var(--w)*2),calc(100vh_-_var(--rail-top)_-_24px)))] w-(--w) shrink-0 self-start rounded-lg border border-dashed border-line bg-surface text-center min-[1400px]:block"
     >
       <div className="flex h-full flex-col items-center justify-center gap-[6cqw] px-[10cqw] text-center">
         <span className="text-[clamp(11px,5cqw,64px)] font-bold uppercase tracking-[0.14em] text-muted">
@@ -93,7 +97,7 @@ function AdSlot({ side }: { side: 'left' | 'right' }) {
  */
 export function Shell({ children, nav = true }: { children: ReactNode; nav?: boolean }) {
   return (
-    <div className="flex justify-center gap-6 pt-0 min-[1400px]:px-3 min-[1400px]:pt-6">
+    <div className="flex justify-center gap-6 pt-0 min-[1400px]:px-3">
       <AdSlot side="left" />
       <div className="zoomcol flex w-full max-w-[1240px] flex-col px-5 pb-28 sm:px-8 min-[1400px]:px-0">
         <TopBar nav={nav} />

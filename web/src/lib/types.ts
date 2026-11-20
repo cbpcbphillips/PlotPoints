@@ -14,6 +14,14 @@ export interface Because {
   match: number
 }
 
+/** The rest of a franchise folded into its best-ranked film. */
+export interface Bundle {
+  franchise: string
+  more: number
+  /** The next few by rank; `more` can be larger than this list. */
+  films: { tmdb_id: number; title: string; year: number | null }[]
+}
+
 export interface Result {
   rank: number
   tmdb_id: number
@@ -34,6 +42,8 @@ export interface Result {
   genres: string[]
   providers: string[]
   overall_rank?: number | null
+  /** Set when this row stands for a whole franchise: how many other films it folds in. */
+  bundle?: Bundle | null
   members: { member: string; match: number; because: Because[] }[]
 }
 
@@ -56,10 +66,61 @@ export interface RecommendResponse {
   results: Result[]
   /** Liked films ranked by weighted similarity; only on the first, unfiltered page of one person. */
   enjoyed: Enjoyed[] | null
+  /** A varied second row: from the person's ranking, spread away from the first page. */
+  branch_out?: Result[] | null
   has_more: boolean
   unmatched_films: number
   pool_size?: number
   pool_matches?: number
+}
+
+/** What a film card shows, independent of any taste profile. */
+export interface FilmCardData {
+  tmdb_id: number
+  media_key: string
+  title: string
+  year: number | null
+  tmdb_rating: number | null
+  runtime: number | null
+  poster_path: string | null
+  backdrop_path: string | null
+  franchise: string | null
+  genres: string[]
+  providers: string[]
+}
+
+export interface FilmDetail extends FilmCardData {
+  original_title: string | null
+  tagline: string | null
+  overview: string | null
+  directors: string[]
+  cast: { name: string; character: string | null }[]
+  providers_as_of: string
+}
+
+/** A "more like this" film: plain cosine similarity to the one being viewed, whole percent. */
+export interface SimilarFilm extends FilmCardData {
+  match: number
+}
+
+/** A liked film of the viewer's that sits close to the film being viewed. */
+export interface ClosestFilm {
+  tmdb_id: number
+  title: string
+  year: number | null
+  poster_path: string | null
+  /** Plain cosine similarity to the viewed film, whole percent. */
+  match: number
+}
+
+/** How one film sits against the viewer's own films. */
+export interface FilmForMe {
+  /** The viewer has already logged this film. */
+  seen: boolean
+  rating: number | null
+  /** Mean similarity of the three closest liked films, whole percent. */
+  match: number | null
+  closest: ClosestFilm[]
 }
 
 export interface SeenInFranchise {

@@ -9,6 +9,11 @@ export function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
+/** The in-app page for one film. */
+export function filmPath(tmdbId: number): string {
+  return `/film/${tmdbId}`
+}
+
 export function tmdbWatchUrl(id: number): string {
   return `https://www.themoviedb.org/movie/${id}/watch?locale=US`
 }
@@ -27,4 +32,19 @@ export function prettyDate(iso: string): string {
     : new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+/** "2h 14m" for a runtime in minutes; "" when unknown. */
+export function runtimeLabel(minutes: number | null): string {
+  if (!minutes) return ''
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`
+}
+
+/** The film id out of a route param, or null when it is not a positive whole number. */
+export function parseFilmId(param: string | undefined): number | null {
+  if (!param || !/^\d+$/.test(param)) return null
+  const n = Number(param)
+  return n > 0 && Number.isSafeInteger(n) ? n : null
 }

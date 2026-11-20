@@ -37,8 +37,11 @@ def _database() -> str:
     return os.environ.get("SNOWFLAKE_DATABASE", "PLOTPOINTS_DB")
 
 
-def build(conn) -> tuple[np.ndarray, dict, str, str]:
-    """Read MART into (vectors, catalog dict, embedding_model, providers_as_of)."""
+CAST_LIMIT = 10  # billed cast shown on the film page
+
+
+def build(conn) -> tuple[np.ndarray, dict, dict, str, str]:
+    """Read MART into (vectors, catalog dict, details dict, embedding_model, providers_as_of)."""
     db = _database()
     with conn.cursor() as cur:
         cur.execute(
@@ -80,6 +83,20 @@ def build(conn) -> tuple[np.ndarray, dict, str, str]:
         )
         genre_rows = cur.fetchall()
 
+        # film-page text (read-only): overview/tagline, then directors and the top billed cast
+        cur.execute(f"select media_key, overview, tagline from {db}.MART.DIM_MEDIA")
+        text_rows = {k: (o, t) for k, o, t in cur.fetchall()}
+        cur.execute(
+            f"""
+            select b.media_key, b.role, p.person_name, b.character, b.cast_order
+            from {db}.MART.BRIDGE_MEDIA_PERSON b
+            join {db}.MART.DIM_PERSON p on p.person_id = b.person_id
+            where b.role in ('cast', 'Director')
+            order by b.media_key, b.cast_order nulls last, p.person_name
+            """
+        )
+        person_rows = cur.fetchall()
+
         # when TMDB's availability data was fetched: the newest catalog load
         cur.execute(f"select max(loaded_at) from {db}.RAW.TMDB_TITLES")
         loaded = cur.fetchone()[0]
@@ -116,14 +133,29 @@ def build(conn) -> tuple[np.ndarray, dict, str, str]:
         "providers": [sorted(by_media.get(r[0], [])) for r in rows],
         "provider_names": provider_names,
     }
+    directors: dict[str, list[str]] = defaultdict(list)
+    cast: dict[str, list[list[str | None]]] = defaultdict(list)
+    for media_key, role, name, character, _order in person_rows:
+        if role == "Director":
+            if name not in directors[media_key]:
+                directors[media_key].append(name)
+        elif len(cast[media_key]) < CAST_LIMIT:
+            cast[media_key].append([name, character or None])
+    keys = catalog["media_key"]
+    details = {
+        "overview": [text_rows.get(k, (None, None))[0] or None for k in keys],
+        "tagline": [text_rows.get(k, (None, None))[1] or None for k in keys],
+        "directors": [directors.get(k, []) for k in keys],
+        "cast": [cast.get(k, []) for k in keys],
+    }
     as_of = loaded.date().isoformat() if loaded else datetime.now(UTC).date().isoformat()
-    return vectors, catalog, model, as_of
+    return vectors, catalog, details, model, as_of
 
 
 def run(upload: bool = False) -> dict:
     """Build a snapshot, write it under data/snapshots/<version>/, optionally push it to S3."""
     with get_snowflake_connection() as conn:
-        vectors, catalog, model, providers_as_of = build(conn)
+        vectors, catalog, details, model, providers_as_of = build(conn)
 
     staging = SNAPSHOT_DIR / "_building"
     if staging.exists():
@@ -132,6 +164,7 @@ def run(upload: bool = False) -> dict:
         staging,
         vectors=vectors,
         catalog=catalog,
+        details=details,
         embedding_model=model,
         created_at=datetime.now(UTC).isoformat(timespec="seconds"),
         providers_as_of=providers_as_of,

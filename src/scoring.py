@@ -17,6 +17,7 @@ decreasing down the list.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -44,6 +45,17 @@ MIN_RUNTIME_MINUTES = 60
 # votes and must never be *recommended*: they shape a profile as seeds and nothing more.
 CANDIDATE_MIN_VOTES = 100
 
+# Liked films from one franchise share their vote: each is weighted 1 / k**DAMPEN_POWER, where k is
+# how many liked films the person has in that franchise. Without it, three liked Spider-Man films
+# give every Spider-Man-adjacent title a perfect top-3, while a person's one-off tastes (one film
+# each for Whiplash, Good Will Hunting, Moneyball) can never fill three slots, so a franchise
+# crowds out everything else. 0.5 is a middle path (1.0 would make three films count as one
+# film; 0.0 is the old behaviour). A reasoned default, not a fitted one.
+DAMPEN_POWER = 0.5
+
+# The "branch out" row: maximal-marginal-relevance re-rank. 0 keeps the ranking, 1 ignores it.
+BRANCH_OUT_LAMBDA = 0.45
+
 _CHUNK = 256  # seed films scored per pass; bounds memory for very large histories
 
 
@@ -55,6 +67,27 @@ def weight_for(rating: float | None, rewatched: bool) -> float | None:
     if weight > 0 and rewatched:
         weight += REWATCH_BONUS
     return weight
+
+
+def dampen_franchise_seeds(
+    weights: list[float | None],
+    franchises: list[str | None],
+    power: float = DAMPEN_POWER,
+) -> list[float | None]:
+    """Share one vote among a person's liked films from the same franchise (see DAMPEN_POWER).
+
+    Pure and row-aligned: `weights[i]` belongs to the film whose franchise is `franchises[i]`.
+    Only liked films (weight > 0) in a named franchise are touched; disliked, neutral, unrated and
+    standalone films pass through unchanged. Callers apply this when they build a profile, so the
+    numpy scorer and the SQL scorer receive identical weights.
+    """
+    liked_in = Counter(
+        f for w, f in zip(weights, franchises, strict=True) if w is not None and w > 0 and f
+    )
+    return [
+        w / (liked_in[f] ** power) if w is not None and w > 0 and f else w
+        for w, f in zip(weights, franchises, strict=True)
+    ]
 
 
 # profile = {member: [(catalog_index, weight_or_None), ...]}
@@ -108,6 +141,38 @@ def _candidates(snap: Snapshot, profiles: Profile, min_runtime: int, min_votes: 
             watched[idx] = True
     long_enough = np.isnan(snap.runtime) | (snap.runtime >= min_runtime)
     return np.flatnonzero(~watched & long_enough & (snap.votes >= min_votes))
+
+
+def similar_to(
+    snap: Snapshot,
+    index: int,
+    n: int = 12,
+    min_runtime: int = MIN_RUNTIME_MINUTES,
+    min_votes: int = CANDIDATE_MIN_VOTES,
+) -> list[dict]:
+    """The `n` films nearest to one film, taste-free: plain cosine, best first.
+
+    Same candidate rule as recommendations (feature length, enough votes) so a "more like this"
+    row never offers a short or a making-of; the film itself is never returned. Rows are unit
+    vectors, so the dot product is the cosine. Raw cosine ranks identically to a z-score here
+    (one seed rescales every candidate the same way), so the z-pass is skipped.
+    """
+    cand = _candidates(snap, {}, min_runtime, min_votes)
+    cand = cand[cand != index]
+    if cand.size == 0 or n <= 0:
+        return []
+    sims = snap.vectors[cand] @ snap.vectors[index]
+    top = np.argsort(-sims, kind="stable")[:n]
+    return [
+        {
+            "index": int(cand[j]),
+            "media_key": snap.media_key[cand[j]],
+            "tmdb_id": int(snap.tmdb_id[cand[j]]),
+            "title": snap.title[cand[j]],
+            "cosine": float(sims[j]),
+        }
+        for j in top
+    ]
 
 
 def _z_pass(sims: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -264,6 +329,119 @@ def rank(
             }
         )
     return results
+
+
+def diversify(
+    snap: Snapshot,
+    ranked: list[dict],
+    n: int,
+    *,
+    shown: list[int] | tuple[int, ...] = (),
+    lam: float = BRANCH_OUT_LAMBDA,
+    max_per_franchise: int = 1,
+) -> list[dict]:
+    """A second, deliberately varied row: maximal-marginal-relevance over a ranked pool.
+
+    Greedy: each pick maximizes (1 - lam) * score - lam * redundancy, where score is the ranking
+    score scaled to 0-1 over the pool and redundancy is the pick's cosine to the nearest film
+    already chosen, scaled to 0-1 between the pool's own 10th and 99th percentile pairwise cosine
+    (raw cosine runs high and narrow, so it needs rescaling to trade off against the score).
+
+    `shown` are catalog rows already on the page. They are never returned, their franchises are
+    skipped entirely, and they count as already-chosen for redundancy, so this row is varied from
+    the main one as well as within itself. At most `max_per_franchise` per franchise. This is not
+    the "wildcard" of roadmap decision 5c: everything here still comes from the person's ranking,
+    it is only spread out.
+    """
+    shown_set = {int(i) for i in shown}
+    shown_franchises = {snap.franchise[i] for i in shown_set if snap.franchise[i]}
+    pool = [
+        r
+        for r in ranked
+        if r["index"] not in shown_set
+        and (
+            snap.franchise[r["index"]] is None or snap.franchise[r["index"]] not in shown_franchises
+        )
+    ]
+    if not pool or n <= 0:
+        return []
+
+    idx = np.array([r["index"] for r in pool])
+    score = np.array([r["score"] for r in pool], dtype=np.float64)
+    span = score.max() - score.min()
+    score_n = (score - score.min()) / span if span > 0 else np.ones(len(pool))
+
+    vecs = snap.vectors[idx]
+    cos = vecs @ vecs.T
+    pairs = cos[np.triu_indices(len(idx), 1)]
+    lo, hi = (np.percentile(pairs, 10), np.percentile(pairs, 99)) if pairs.size else (0.0, 1.0)
+    hi = max(hi, lo + 1e-6)
+
+    def scaled(c: np.ndarray) -> np.ndarray:
+        return np.clip((c - lo) / (hi - lo), 0.0, 1.0)
+
+    redundancy = scaled(cos)
+    nearest = np.zeros(len(idx))
+    if shown_set:
+        nearest = scaled(vecs @ snap.vectors[sorted(shown_set)].T).max(axis=1)
+
+    picked: list[int] = []
+    taken = np.zeros(len(idx), dtype=bool)
+    per_franchise: Counter = Counter()
+    while len(picked) < min(n, len(idx)):
+        value = (1 - lam) * score_n - lam * nearest
+        value[taken] = -np.inf
+        for j in np.flatnonzero(~taken):
+            f = snap.franchise[idx[j]]
+            if f and per_franchise[f] >= max_per_franchise:
+                value[j] = -np.inf
+        best = int(np.argmax(value))
+        if not np.isfinite(value[best]):
+            break
+        picked.append(best)
+        taken[best] = True
+        f = snap.franchise[idx[best]]
+        if f:
+            per_franchise[f] += 1
+        nearest = np.maximum(nearest, redundancy[best])
+    return [pool[j] for j in picked]
+
+
+def closest_rated(
+    snap: Snapshot,
+    profiles: Profile,
+    index: int,
+    *,
+    n: int = 5,
+    member: str | None = None,
+) -> list[dict]:
+    """The films a person liked that sit closest to one film, nearest first.
+
+    Plain cosine, so the order matches the percentage shown beside each one. (The recommender's
+    "because you liked" notes use a standardized, weight-scaled score instead, which is right for
+    ranking candidates but would show a list whose percentages are not in order.) The target
+    itself is never returned, even if the person liked it.
+    """
+    members = _split(profiles)
+    m = next((x for x in members if x.name == member), members[0])
+    sims = (snap.vectors[m.liked_idx] @ snap.vectors[index]).astype(np.float64)
+    out = []
+    for j in np.argsort(-sims, kind="stable"):
+        row = int(m.liked_idx[j])
+        if row == index:
+            continue
+        out.append(
+            {
+                "index": row,
+                "media_key": snap.media_key[row],
+                "tmdb_id": int(snap.tmdb_id[row]),
+                "title": snap.title[row],
+                "cosine": float(sims[j]),
+            }
+        )
+        if len(out) == n:
+            break
+    return out
 
 
 def influence(

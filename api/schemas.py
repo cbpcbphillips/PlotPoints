@@ -31,6 +31,10 @@ class RecommendRequest(BaseModel):
     providers: list[str] = Field(default_factory=list, max_length=50)
     limit: int = Field(default=20, ge=1, le=50)
     offset: int = Field(default=0, ge=0, le=350)
+    # One entry per franchise (its best film, with a count of the rest) instead of every film.
+    bundle: bool = False
+    # Size of the varied second row; only returned with the first page, and only unfiltered.
+    branch_out: int = Field(default=0, ge=0, le=24)
 
 
 class ProfileRequest(BaseModel):

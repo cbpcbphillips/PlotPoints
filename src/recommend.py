@@ -53,6 +53,7 @@ from scoring import (
     RATING_MIDPOINT,
     REWATCH_BONUS,  # noqa: F401
     TOP_N,
+    dampen_franchise_seeds,
     weight_for,
 )
 
@@ -121,6 +122,26 @@ def build_profiles(conn, usernames: list[str]) -> dict[str, list[dict]]:
                 ),
             }
         )
+
+    # Liked films from one franchise share a vote (scoring.DAMPEN_POWER). Done here, where the
+    # profile is built, so the SQL scorer and the numpy scorer are handed identical weights.
+    keys = sorted({f["media_key"] for films in profiles.values() for f in films})
+    franchise_of: dict[str, str | None] = {}
+    for start in range(0, len(keys), 500):
+        chunk = keys[start : start + 500]
+        with conn.cursor() as cur:
+            cur.execute(
+                f"select media_key, franchise from {_database()}.MART.DIM_MEDIA "
+                f"where media_key in ({', '.join(['%s'] * len(chunk))})",
+                chunk,
+            )
+            franchise_of.update(dict(cur.fetchall()))
+    for films in profiles.values():
+        damped = dampen_franchise_seeds(
+            [f["weight"] for f in films], [franchise_of.get(f["media_key"]) for f in films]
+        )
+        for f, w in zip(films, damped, strict=True):
+            f["weight"] = w
 
     missing = [u for u in usernames if u.lower() not in {k.lower() for k in profiles}]
     if missing:
