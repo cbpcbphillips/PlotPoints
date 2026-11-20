@@ -386,3 +386,26 @@ def test_results_carry_image_paths(client):
     top = client.post("/recommend", json=body(1000, 1001, limit=20)).json()["results"]
     a05 = next(x for x in top if x["tmdb_id"] == 1005)
     assert (a05["poster_path"], a05["backdrop_path"]) == ("/p.jpg", "/b.jpg")
+
+
+def test_franchise_shelf_lists_every_unseen_film_not_only_the_top_of_the_ranking(
+    client, monkeypatch
+):
+    """A series' weaker entries can rank below the pool the series are picked from; they must still
+    be on its shelf (Rocky V, Batman Forever), with scores unchanged."""
+    s = client.app.state.snap
+    for i in range(4, 12):  # eight A titles in one series; A03 is a short so it is skipped
+        s.franchise[i] = "Alpha"
+    before = client.post("/franchises", json=body(1000, 1001)).json()
+    monkeypatch.setattr("api.app.FRANCHISE_POOL", 6)  # far shallower than the series is spread
+    after = client.post("/franchises", json=body(1000, 1001)).json()
+
+    def shelf(r):
+        g = next(g for g in r["franchises"] if g["franchise"] == "Alpha")
+        return {x["tmdb_id"]: x["score"] for x in [g["best"], *g["others"]]}, g["count"]
+
+    full, full_count = shelf(before)
+    shallow, shallow_count = shelf(after)
+    assert len(full) == full_count == 8
+    assert shallow == full  # nothing missing, nothing re-scored
+    assert shallow_count == 8

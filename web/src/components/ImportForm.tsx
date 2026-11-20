@@ -127,14 +127,14 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
         >
           <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
         </svg>
-        <div className="text-[19px] font-bold lg:text-[22px]">
+        <div className="text-[1.1875rem] font-bold lg:text-[1.375rem]">
           {files.length
             ? files.map((f) => f.name).join(', ')
             : adding
               ? 'Drop your Letterboxd export here'
               : 'Drop your Letterboxd export here'}
         </div>
-        <div className="mb-3 text-[15px] text-muted lg:text-[17px]">
+        <div className="mb-3 text-[0.9375rem] text-muted lg:text-[1.0625rem]">
           ratings.csv, diary.csv or the whole .zip
         </div>
         <input
@@ -143,26 +143,27 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
           accept=".zip,.csv"
           multiple
           className="sr-only"
-          aria-label="Letterboxd export file"
+          tabIndex={-1}
+          aria-hidden="true"
           onChange={(e) => chooseFiles(e.target.files)}
         />
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          className="press min-h-12 cursor-pointer rounded-[10px] border-0 bg-surface2 px-6 py-3 text-[17px] font-bold text-ink"
+          className="press min-h-12 cursor-pointer rounded-[10px] border-0 bg-surface2 px-6 py-3 text-[1.0625rem] font-bold text-ink"
         >
           Choose a file
         </button>
       </div>
 
-      <div className="flex items-center gap-4 text-[15px] text-muted lg:text-base">
+      <div className="flex items-center gap-4 text-[0.9375rem] text-muted lg:text-base">
         <span className="h-px flex-1 bg-line" />
         or
         <span className="h-px flex-1 bg-line" />
       </div>
 
       <div className="flex flex-col gap-2.5">
-        <label htmlFor="lb-user" className="text-base font-bold lg:text-[17px]">
+        <label htmlFor="lb-user" className="text-base font-bold lg:text-[1.0625rem]">
           {adding ? 'Or fetch the latest entries for a username' : 'Your Letterboxd username'}
         </label>
         <input
@@ -174,9 +175,11 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          className="min-h-[52px] w-full rounded-[10px] border-[1.5px] border-field bg-bg px-4 text-lg text-ink lg:min-h-[54px] lg:px-[18px] lg:text-[19px]"
+          aria-describedby={error ? 'lb-hint lb-error' : 'lb-hint'}
+          aria-invalid={error ? true : undefined}
+          className="min-h-[52px] w-full rounded-[10px] border-[1.5px] border-field bg-bg px-4 text-lg text-ink lg:min-h-[54px] lg:px-[18px] lg:text-[1.1875rem]"
         />
-        <div className="text-sm text-muted lg:text-base">
+        <div id="lb-hint" className="text-sm text-muted lg:text-base">
           A username only returns your latest 50 or so entries. An export brings your whole history.
         </div>
       </div>
@@ -189,14 +192,14 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
           onChange={(e) => setKeep(e.target.checked)}
           className="mt-[3px] h-[22px] w-[22px] flex-none accent-[var(--accent)]"
         />
-        <label htmlFor="lb-keep" className="text-[15px] leading-[1.45] lg:text-[17px] lg:leading-[1.5]">
+        <label htmlFor="lb-keep" className="text-[0.9375rem] leading-[1.45] lg:text-[1.0625rem] lg:leading-[1.5]">
           Let PlotPoints keep my imported ratings to improve the project. I can ask to delete them at
           any time.
         </label>
       </div>
 
       {error && (
-        <div role="alert" className="rounded-[10px] border border-field px-4 py-3 text-base">
+        <div id="lb-error" role="alert" className="rounded-[10px] border border-field px-4 py-3 text-base">
           {error}
         </div>
       )}
@@ -204,7 +207,7 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
       <button
         type="submit"
         disabled={busy}
-        className="press min-h-[54px] w-full cursor-pointer rounded-xl border-0 bg-accent px-7 py-3.5 text-[19px] font-bold text-on disabled:cursor-wait disabled:opacity-70 lg:min-h-[58px] lg:text-xl"
+        className="press min-h-[54px] w-full cursor-pointer rounded-xl border-0 bg-accent px-7 py-3.5 text-[1.1875rem] font-bold text-on disabled:cursor-wait disabled:opacity-70 lg:min-h-[58px] lg:text-xl"
       >
         {busy ? 'Reading your history…' : adding ? 'Add to my list' : 'Find my recommendations'}
       </button>

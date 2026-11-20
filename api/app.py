@@ -13,9 +13,10 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import scoring
@@ -46,9 +47,10 @@ if not logging.getLogger().handlers and not log.handlers:
 MAX_POOL = 400  # offset + limit; deeper than this is not a recommendation list any more
 FRANCHISE_POOL = 300  # how far down the ranking franchises are gathered from
 FRANCHISES_SHOWN = 5  # the page shows a person's top five series, not every one
-FILMS_PER_FRANCHISE = 8  # unseen films kept per series: its best plus the next seven
+FILMS_PER_FRANCHISE = 20  # unseen films kept per series: its best plus the next nineteen
 LOOKUP_CAP = 200  # TMDB lookups per import; the rest are reported as unmatched
 WANTED_CAP = 200  # missing-title ids written to the inbox per request
+SERIES_SEEN_LISTED = 10  # rated films of a series named under a pick
 INFLUENCE_PICKS = 20  # the top picks the "because you enjoyed" row is measured against
 MAX_PROVIDERS_LISTED = 60
 MAX_SIMILAR = 24  # "more like this" is a row, not a list
@@ -145,9 +147,16 @@ def create_app(
 
     # ---------------------------------------------------------------- helpers
 
-    def to_profiles(s: snapshot.Snapshot, req: RecommendRequest) -> tuple[scoring.Profile, dict]:
+    def to_profiles(
+        s: snapshot.Snapshot, req: RecommendRequest
+    ) -> tuple[scoring.Profile, dict, scoring.Profile]:
+        """Per member: the scoring profile (franchise votes shared) and the same films with their
+        own weights, which only decide which liked films the "because" notes name."""
         profiles: scoring.Profile = {}
+        reasons: scoring.Profile = {}
         unmatched = 0
+        liked_counts: list[int] = []
+        rated_counts: list[int] = []
         for m in req.members:
             if m.name in profiles:
                 raise HTTPException(422, f"Two members are both called {m.name!r}.")
@@ -172,7 +181,16 @@ def create_app(
                 [w for _, w in films], [s.franchise[i] for i, _ in films]
             )
             profiles[m.name] = [(i, w) for (i, _), w in zip(films, damped, strict=True)]
-        return profiles, {"unmatched_films": unmatched}
+            reasons[m.name] = films
+            liked_counts.append(sum(1 for _, w in films if w is not None and w > 0))
+            rated_counts.append(sum(1 for _, w in films if w is not None))
+        # how much taste there is to compare with: the thinnest member's, so a group is honest
+        info = {
+            "unmatched_films": unmatched,
+            "liked_films": min(liked_counts),
+            "rated_films": min(rated_counts),
+        }
+        return profiles, info, reasons
 
     def novelty_of(r: dict) -> int | None:
         because = r["members"][0]["because"] if r["members"] else []
@@ -289,6 +307,42 @@ def create_app(
         out.sort(key=lambda x: (x["year"] or 0, x["title"]))
         return out
 
+    def complete_series(
+        s: snapshot.Snapshot,
+        shown: list[dict],
+        pool: list[dict],
+        profiles,
+        reasons,
+        allow,
+    ) -> None:
+        """List every unseen film of each shown series, not just those in the top of the ranking.
+
+        Series are chosen from the top FRANCHISE_POOL of the ranking, but a series' weaker entries
+        (a Rocky V, a Batman Forever) can sit further down and would silently go missing from its
+        shelf. One more ranking restricted to the shown series' films fills them in. The mask is
+        applied after the z-scores (see scoring.rank), so no score changes. The restricted
+        ranking's own rank numbers only count within the series, so rank is the overall one for
+        films in the pool and FRANCHISE_POOL + 1 ("further down") for the rest.
+        """
+        if not shown:
+            return
+        names = {g["franchise"] for g in shown}
+        mask = np.fromiter((f in names for f in s.franchise), dtype=bool, count=len(s))
+        if allow is not None:
+            mask &= allow
+        full = scoring.rank(s, profiles, limit=int(mask.sum()), allow=mask, reasons=reasons)
+        overall = {r["index"]: r["rank"] for r in pool}
+        by_name: dict[str, list[dict]] = {}
+        for r in full:
+            row = present(s, r) | {"rank": overall.get(r["index"], FRANCHISE_POOL + 1)}
+            by_name.setdefault(s.franchise[r["index"]], []).append(row)
+        for g in shown:
+            rows = by_name.get(g["franchise"], [])
+            g["others"] = [x for x in rows if x["tmdb_id"] != g["best"]["tmdb_id"]][
+                : FILMS_PER_FRANCHISE - 1
+            ]
+            g["count"] = len(rows)
+
     def allow_mask(s: snapshot.Snapshot, providers: list[str]):
         if not providers:
             return None
@@ -302,6 +356,21 @@ def create_app(
     @app.get("/health")
     def health(request: Request):
         return {"status": "ok", "snapshot": request.app.state.snap.version}
+
+    @app.get("/facets")
+    def facets(request: Request):
+        """Genres and decades with film counts, for the browse page."""
+        return request.app.state.snap.facets()
+
+    @app.get("/people")
+    def people(
+        request: Request,
+        kind: Literal["director", "actor"],
+        q: str = Query(default="", max_length=60),
+        limit: int = Query(default=12, ge=1, le=50),
+    ):
+        """Directors or billed cast by film count, narrowed by a name search."""
+        return {"people": request.app.state.snap.people(kind, q, limit)}
 
     @app.get("/meta")
     def meta(request: Request):
@@ -372,7 +441,7 @@ def create_app(
         s = request.app.state.snap
         i = movie_index(s, tmdb_id)
         req = RecommendRequest(members=[Member(name="me", films=body.films)])
-        profiles, _ = to_profiles(s, req)
+        profiles, _, _ = to_profiles(s, req)
         closest = scoring.closest_rated(s, profiles, i, n=CLOSEST_SHOWN)
         mine = next((f for f in body.films if f.tmdb_id == tmdb_id), None)
         return {
@@ -511,41 +580,86 @@ def create_app(
         s = request.app.state.snap
         if body.offset + body.limit > MAX_POOL:
             raise HTTPException(422, f"offset + limit may not exceed {MAX_POOL}.")
-        profiles, info = to_profiles(s, body)
+        profiles, info, reasons = to_profiles(s, body)
         allow = allow_mask(s, body.providers)
+        facet_info = None
+        if body.facets:
+            # Filters are masks applied AFTER the z-scores, like the provider filter, so a title
+            # scores the same inside a genre page as on the main list. They combine with AND.
+            fmask = np.ones(len(s), dtype=bool)
+            for f in body.facets:
+                one = s.facet_mask(f.kind, f.value)
+                if not one.any():  # a name or decade the catalog does not have: a bad link
+                    raise HTTPException(404, f"No films found for {f.kind} {f.value!r}.")
+                fmask &= one
+            facet_info = {
+                "facets": [
+                    {"kind": f.kind, "value": s.facet_name(f.kind, f.value) or f.value}
+                    for f in body.facets
+                ],
+                "total": int(fmask.sum()),  # may be 0: every filter exists, but not together
+            }
+            allow = fmask if allow is None else allow & fmask
         if body.bundle:
             # Rank the whole pool, then fold each franchise into its best-ranked film; paging is
             # over the folded entries. The ranking itself is untouched.
-            pool = scoring.rank(s, profiles, limit=MAX_POOL, allow=allow)
+            pool = scoring.rank(s, profiles, limit=MAX_POOL, allow=allow, reasons=reasons)
             entries = bundle_by_franchise(s, pool)
             results = entries[: body.offset + body.limit]
             has_more = len(entries) > body.offset + body.limit
             page = [present(s, r) | bundle_info(s, r) for r in results[body.offset :]]
         else:
             pool = None
-            results = scoring.rank(s, profiles, limit=body.offset + body.limit, allow=allow)
+            results = scoring.rank(
+                s, profiles, limit=body.offset + body.limit, allow=allow, reasons=reasons
+            )
             has_more = len(results) == body.offset + body.limit
             page = [present(s, r) for r in results[body.offset :]]
-        if allow is not None:
+        if body.providers:
             # Where each title sits in the UNFILTERED ranking, so "best on Netflix" can say it is
             # overall #22. Filtering a finished list instead would be dishonest, which is why the
             # filter lives inside scoring.rank (see roadmap open decision 7).
-            overall = scoring.rank(s, profiles, limit=MAX_POOL)
+            overall = scoring.rank(s, profiles, limit=MAX_POOL, reasons=reasons)
             by_index = {r["index"]: r["rank"] for r in overall}
             for item, r in zip(page, results[body.offset :], strict=True):
                 item["overall_rank"] = by_index.get(r["index"])
             info["pool_size"] = len(overall)
             info["pool_matches"] = sum(1 for r in overall if allow[r["index"]])
         enjoyed = None
-        if body.offset == 0 and not body.providers and len(profiles) == 1:
+        if body.offset == 0 and not body.providers and not body.facets and len(profiles) == 1:
             enjoyed = enjoyed_films(s, profiles, results, body.members[0].films)
         branch_out = None
-        if body.branch_out and body.offset == 0 and not body.providers and pool is not None:
+        beyond = None
+        pick = None
+        first_page = (
+            body.offset == 0 and not body.providers and not body.facets and pool is not None
+        )
+        if first_page and results:
+            # a pick from another corner of the person's taste than the top pick (not a score)
+            pick = scoring.beyond_pick(s, pool, results[0])
+            beyond = None if pick is None else present(s, pick)
+        if body.branch_out and first_page:
             # varied from the page above it: nothing already shown, none of its franchises
             shown = [r["index"] for r in results]
+            if pick is not None:
+                shown.append(pick["index"])
             branch_out = [
                 present(s, r) for r in scoring.diversify(s, pool, body.branch_out, shown=shown)
             ]
+        # the series each pick belongs to, with the films of it the person has already rated
+        series: dict[str, list[dict]] = {}
+
+        def with_series(item: dict) -> dict:
+            name = item["franchise"]
+            if name:
+                if name not in series:
+                    series[name] = seen_in_franchise(s, name, body)[:SERIES_SEEN_LISTED]
+                item["series_seen"] = series[name]
+            return item
+
+        page = [with_series(x) for x in page]
+        branch_out = None if branch_out is None else [with_series(x) for x in branch_out]
+        beyond = None if beyond is None else with_series(beyond)
         return {
             "snapshot": s.version,
             "group": len(profiles) > 1,
@@ -553,6 +667,8 @@ def create_app(
             "results": page,
             "enjoyed": enjoyed,
             "branch_out": branch_out,
+            "beyond": beyond,
+            "facet": facet_info,
             "has_more": has_more,
             **info,
         }
@@ -560,9 +676,9 @@ def create_app(
     @app.post("/franchises")
     def franchises(body: RecommendRequest, request: Request):
         s = request.app.state.snap
-        profiles, info = to_profiles(s, body)
+        profiles, info, reasons = to_profiles(s, body)
         results = scoring.rank(
-            s, profiles, limit=FRANCHISE_POOL, allow=allow_mask(s, body.providers)
+            s, profiles, limit=FRANCHISE_POOL, allow=allow_mask(s, body.providers), reasons=reasons
         )
         groups: dict[str, list[dict]] = {}
         for r in results:
@@ -581,7 +697,9 @@ def create_app(
             if len(rs) >= 2  # a franchise of one is just a recommendation
         ]
         out.sort(key=lambda g: g["best"]["rank"])
-        return {"snapshot": s.version, "franchises": out[:FRANCHISES_SHOWN], **info}
+        shown = out[:FRANCHISES_SHOWN]
+        complete_series(s, shown, results, profiles, reasons, allow_mask(s, body.providers))
+        return {"snapshot": s.version, "franchises": shown, **info}
 
     @app.post("/profile")
     def profile(body: ProfileRequest, request: Request):

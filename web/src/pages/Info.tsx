@@ -10,8 +10,8 @@ import { useProfile } from '../lib/profile'
 function Block({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
     <section id={id} className="border-t border-line py-8 lg:py-10">
-      <h2 className="m-0 mb-3 text-2xl font-bold lg:text-[30px]">{title}</h2>
-      <div className="flex max-w-[44em] flex-col gap-3 text-[17px] text-muted lg:text-lg">
+      <h2 className="m-0 mb-3 text-2xl font-bold lg:text-[1.875rem]">{title}</h2>
+      <div className="flex max-w-[44em] flex-col gap-3 text-[1.0625rem] text-muted lg:text-lg">
         {children}
       </div>
     </section>
@@ -21,7 +21,7 @@ function Block({ title, id, children }: { title: string; id?: string; children: 
 export function About() {
   const meta = useQuery({ queryKey: ['meta'], queryFn: api.meta, staleTime: Infinity })
   return (
-    <Shell>
+    <Shell title="About and credits" ads={false}>
       <PageTitle title="About and credits">
         A film recommender built to learn how recommendation systems work, end to end.
       </PageTitle>
@@ -118,7 +118,7 @@ export function Privacy() {
   }
 
   return (
-    <Shell>
+    <Shell title="Privacy" ads={false}>
       <PageTitle title="Privacy" />
       <Block title="What stays on your device">
         <p className="m-0">
@@ -126,6 +126,15 @@ export function Privacy() {
           and ratings are kept in this browser&rsquo;s storage so your list is still here next visit.
           To make a recommendation, the films you have seen and their ratings are sent to the server,
           used to compute your list, and not kept.
+        </p>
+      </Block>
+      <Block title="Watching together">
+        <p className="m-0">
+          If you add other people to a group, their films and ratings are kept in this browser too,
+          next to yours, and sent to the server only to rank that one list. They are never stored on
+          the server, and the consent box above covers only your own history. Only add people who
+          are happy for you to use their ratings; you can remove them, or everyone, at any time from
+          the Together page.
         </p>
       </Block>
       <Block title="What is stored, only if you agree">
@@ -165,7 +174,7 @@ export function Privacy() {
             if (token.trim()) void remove(token)
           }}
         >
-          <label htmlFor="del-token" className="sr-only">
+          <label htmlFor="del-token" className="w-full text-base font-bold">
             Deletion token
           </label>
           <input

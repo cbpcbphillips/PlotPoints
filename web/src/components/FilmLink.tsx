@@ -18,3 +18,16 @@ export function FilmLink({
     </Link>
   )
 }
+
+/**
+ * The same link wrapped around a poster. Mouse and touch users can click the poster; keyboard and
+ * screen-reader users get one stop per card, the title link, so it is out of the tab order and
+ * hidden from assistive tech (it only repeats the title link).
+ */
+export function PosterLink({ id, children }: { id: number; children: ReactNode }) {
+  return (
+    <Link to={filmPath(id)} tabIndex={-1} aria-hidden="true" className="block text-inherit">
+      {children}
+    </Link>
+  )
+}

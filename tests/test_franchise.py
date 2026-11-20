@@ -126,6 +126,11 @@ def body(**extra):
     return {"members": [{"name": "me", "films": films}], **extra}
 
 
+def body_for(ids, **extra):
+    films = [{"tmdb_id": i, "rating": 4.5} for i in ids]
+    return {"members": [{"name": "me", "films": films}], **extra}
+
+
 def test_bundle_folds_a_series_into_one_entry(client):
     r = client.post("/recommend", json=body(bundle=True, limit=30)).json()
     series = [x for x in r["results"] if x["franchise"] == "Series A"]
@@ -205,3 +210,139 @@ def test_api_profile_dampens_a_liked_series(client):
         n for n, r in enumerate(undamped) if snap.title[r["index"]].startswith("B")
     )
     assert first_b_damped <= first_b_plain
+
+
+# ------------------------------------------------------------ reasons under dampening
+
+
+def test_reasons_name_the_series_you_rated_not_a_one_off_favourite():
+    """Spider-Man regression: damped weights let a standalone 5-star out-vote series seeds in the
+    "because" notes. Reasons use the undamped weights; scores are identical either way."""
+    snap = make_snapshot()
+    series = [idx(snap, f"A0{i}") for i in (0, 1, 2)]
+    for i in series:
+        snap.franchise[i] = "Series A"
+    solo = idx(snap, "A13")
+    raw = [(i, 2.0) for i in series] + [(solo, 2.0)]
+    damped = scoring.dampen_franchise_seeds(
+        [w for _, w in raw], [snap.franchise[i] for i, _ in raw]
+    )
+    prof = {"me": [(i, w) for (i, _), w in zip(raw, damped, strict=True)]}
+
+    old = scoring.rank(snap, prof, limit=60)
+    new = scoring.rank(snap, prof, limit=60, reasons={"me": raw})
+    assert [r["index"] for r in old] == [r["index"] for r in new]
+    assert [r["score"] for r in old] == pytest.approx([r["score"] for r in new])
+
+    names = {snap.title[i] for i in series}
+    full = lost = 0
+    for o, n in zip(old, new, strict=True):
+        if not snap.title[n["index"]].startswith("A"):
+            continue
+        before = {b["title"] for b in o["members"][0]["because"]}
+        after = {b["title"] for b in n["members"][0]["because"]}
+        full += names <= after
+        lost += len(before & names) < 3 and names <= after
+    assert full and lost  # the old reasons dropped a series film that the new ones keep
+
+
+# ------------------------------------------------------------ "another side of your taste"
+
+
+def ranked_with_reasons(snap, liked):
+    prof = {"me": [(idx(snap, t), 2.0) for t in liked]}
+    return scoring.rank(snap, prof, limit=60, reasons=prof)
+
+
+def test_beyond_pick_comes_from_another_cluster_than_the_top_pick():
+    snap = make_snapshot()
+    # liked: three A films, plus two B films and two C films the top pick is not near
+    ranked = ranked_with_reasons(snap, ["A00", "A01", "A02", "B00", "B01", "C00", "C01"])
+    top = ranked[0]
+    pick = scoring.beyond_pick(snap, ranked, top, anchor_cosine=0.0)
+    assert pick is not None
+    assert pick["index"] != top["index"]
+    assert snap.title[pick["index"]][0] != snap.title[top["index"]][0]
+    top_ids = {b["tmdb_id"] for b in top["members"][0]["because"]}
+    assert not top_ids & {b["tmdb_id"] for b in pick["members"][0]["because"]}
+
+
+def test_beyond_pick_skips_the_top_picks_franchise_and_exclusions():
+    snap = make_snapshot()
+    ranked = ranked_with_reasons(snap, ["A00", "A01", "A02", "B00", "B01", "C00", "C01"])
+    top = ranked[0]
+    first = scoring.beyond_pick(snap, ranked, top, anchor_cosine=0.0)
+    for r in ranked:
+        snap.franchise[r["index"]] = None
+    snap.franchise[first["index"]] = snap.franchise[top["index"]] = "Same series"
+    again = scoring.beyond_pick(snap, ranked, top, anchor_cosine=0.0)
+    assert again is None or again["index"] != first["index"]
+    other = scoring.beyond_pick(snap, ranked, top, exclude=[first["index"]], anchor_cosine=0.0)
+    assert other is None or other["index"] != first["index"]
+
+
+def test_beyond_pick_needs_a_cluster_of_rated_films_behind_it():
+    snap = make_snapshot()
+    ranked = ranked_with_reasons(snap, ["A00", "A01", "A02", "B00", "B01", "C00", "C01"])
+    # an impossible closeness bar means nothing is rooted in films the person has seen
+    assert scoring.beyond_pick(snap, ranked, ranked[0], anchor_cosine=2.0) is None
+
+
+def test_beyond_pick_with_a_single_taste_cluster_may_be_none_but_never_the_top():
+    snap = make_snapshot()
+    ranked = ranked_with_reasons(snap, ["A00", "A01", "A02"])
+    pick = scoring.beyond_pick(snap, ranked, ranked[0], anchor_cosine=0.0)
+    assert pick is None or pick["index"] != ranked[0]["index"]
+
+
+# ------------------------------------------------------------ API: beyond, series, counts
+
+
+def test_recommend_returns_beyond_on_the_first_bundled_page_only(client):
+    liked = [1000, 1001, 1002, 1020, 1021, 1040, 1041]
+    first = client.post("/recommend", json=body_for(liked, bundle=True, limit=10)).json()
+    assert first["beyond"] is not None
+    assert first["beyond"]["tmdb_id"] != first["results"][0]["tmdb_id"]
+    later = client.post("/recommend", json=body_for(liked, bundle=True, limit=10, offset=10)).json()
+    assert later["beyond"] is None
+    plain = client.post("/recommend", json=body_for(liked, limit=10)).json()
+    assert plain["beyond"] is None
+
+
+def test_branch_out_never_repeats_the_beyond_pick(client):
+    liked = [1000, 1001, 1002, 1020, 1021, 1040, 1041]
+    r = client.post("/recommend", json=body_for(liked, bundle=True, limit=10, branch_out=8)).json()
+    if r["beyond"]:
+        assert r["beyond"]["tmdb_id"] not in {x["tmdb_id"] for x in r["branch_out"]}
+
+
+def test_series_seen_lists_rated_films_of_the_picks_series(client):
+    # A01-A06 are "Series A"; the person rated A01, A02 and one unrelated film
+    r = client.post("/recommend", json=body_for([1001, 1002, 1020], bundle=True, limit=30)).json()
+    series_pick = next(x for x in r["results"] if x["franchise"] == "Series A")
+    assert {f["tmdb_id"] for f in series_pick["series_seen"]} == {1001, 1002}
+    assert all("series_seen" not in x for x in r["results"] if x["franchise"] is None)
+
+
+def test_recommend_reports_how_much_taste_there_is(client):
+    films = [
+        {"tmdb_id": 1000, "rating": 5},
+        {"tmdb_id": 1001, "rating": 4},
+        {"tmdb_id": 1020, "rating": 3},  # neutral: rated, not liked
+        {"tmdb_id": 1021, "rating": 1.5},
+        {"tmdb_id": 1040},  # seen, unrated
+    ]
+    r = client.post(
+        "/recommend", json={"members": [{"name": "me", "films": films}], "limit": 5}
+    ).json()
+    assert r["liked_films"] == 2
+    assert r["rated_films"] == 4
+
+
+def test_group_taste_count_is_the_thinnest_member(client):
+    members = [
+        {"name": "a", "films": [{"tmdb_id": 1000 + i, "rating": 4.5} for i in range(6)]},
+        {"name": "b", "films": [{"tmdb_id": 1020, "rating": 4.5}]},
+    ]
+    r = client.post("/recommend", json={"members": members, "limit": 5}).json()
+    assert r["liked_films"] == 1

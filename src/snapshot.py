@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,12 +89,95 @@ class Snapshot:
     def __len__(self) -> int:
         return len(self.media_key)
 
+    def facet_mask(self, kind: str, value: str) -> np.ndarray:
+        """Boolean mask of the titles with this genre, director, cast member or decade.
+
+        Names match ignoring case and extra spaces. Cast is the top-billed ten per film (the
+        snapshot keeps no more), so an actor's page lists the films they were billed in.
+        """
+        if kind == "era":
+            decade = parse_decade(value)
+            if decade is None:
+                return np.zeros(len(self), dtype=bool)
+            return (self.year >= decade) & (self.year < decade + 10)
+        want = _fold(value)
+        if kind == "genre":
+            rows = (any(_fold(g) == want for g in gs) for gs in self.genres)
+        elif kind == "director":
+            rows = (any(_fold(d) == want for d in ds) for ds in self.directors)
+        elif kind == "actor":
+            rows = (any(_fold(c[0] or "") == want for c in cs) for cs in self.cast)
+        else:
+            raise ValueError(f"Unknown facet kind {kind!r}")
+        return np.fromiter(rows, dtype=bool, count=len(self))
+
+    def facet_name(self, kind: str, value: str) -> str | None:
+        """The properly-cased name for a facet value as the catalog spells it (None if absent)."""
+        if kind == "era":
+            decade = parse_decade(value)
+            return None if decade is None else f"{decade}s"
+        want = _fold(value)
+        if kind == "genre":
+            names = (g for gs in self.genres for g in gs)
+        elif kind == "director":
+            names = (d for ds in self.directors for d in ds)
+        else:
+            names = (c[0] or "" for cs in self.cast for c in cs)
+        return next((n for n in names if _fold(n) == want), None)
+
+    def facets(self) -> dict:
+        """Genres and decades with their film counts, for the browse page."""
+        genres = Counter(g for gs in self.genres for g in set(gs))
+        decades = Counter(decade_of(int(y)) for y in self.year if y > 0)
+        return {
+            "genres": [{"name": n, "count": c} for n, c in sorted(genres.items(), key=_by_count)],
+            "decades": [{"decade": d, "count": decades[d]} for d in sorted(decades)],
+        }
+
+    def people(self, kind: str, query: str = "", limit: int = 12) -> list[dict]:
+        """Directors or billed cast, by how many films they have here, filtered by a name search."""
+        cache = self.__dict__.setdefault("_people_counts", {})  # built on first use, per kind
+        if kind not in cache:
+            if kind == "director":
+                names = (d for ds in self.directors for d in set(ds))
+            elif kind == "actor":
+                names = (n for cs in self.cast for n in {c[0] for c in cs if c[0]})
+            else:
+                raise ValueError(f"Unknown people kind {kind!r}")
+            cache[kind] = Counter(names)
+        counts = cache[kind]
+        q = _fold(query)
+        hits = [(n, c) for n, c in counts.items() if not q or q in _fold(n)]
+        hits.sort(key=lambda nc: (-nc[1], nc[0]))
+        return [{"name": n, "count": c} for n, c in hits[:limit]]
+
     def provider_mask(self, groups: list[str]) -> np.ndarray:
         """Boolean mask of titles streaming on ANY of the named provider groups."""
         wanted = {self.provider_names.index(g) for g in groups if g in self.provider_names}
         return np.fromiter(
             (bool(wanted.intersection(p)) for p in self.providers), dtype=bool, count=len(self)
         )
+
+
+FACET_KINDS = ("genre", "director", "actor", "era")
+
+
+def decade_of(year: int) -> int:
+    return year // 10 * 10
+
+
+def parse_decade(value: str) -> int | None:
+    """'1990', '1990s' or '1994' -> 1990. None when it is not a year."""
+    digits = value.strip().lower().rstrip("s")
+    return decade_of(int(digits)) if digits.isdigit() and len(digits) == 4 else None
+
+
+def _fold(text: str) -> str:
+    return " ".join((text or "").casefold().split())
+
+
+def _by_count(item: tuple[str, int]) -> tuple[int, str]:
+    return (-item[1], item[0])
 
 
 def normalize_title(title: str) -> str:

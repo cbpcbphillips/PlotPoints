@@ -21,3 +21,9 @@ airflow.cfg
 # Frontend (Phase 8)
 node_modules/
 /web/dist/
+
+# Logs and JVM crash dumps (hs_err_pid*.log, replay_pid*.log), dbt run logs
+*.log
+hs_err_pid*
+replay_pid*
+plotpoints_dbt/logs/

@@ -22,8 +22,9 @@
   --accent: #8f5a0f;
   --accent-deco: #b7791f;
   --on: #ffffff;
-  --field: #8a8f9e;
-  --pt-lo: #9aa3f0;
+  --field: #6e7388; /* control borders: at least 3:1 on every surface (WCAG 1.4.11) */
+  --line-strong: var(--field);
+  --pt-lo: #5f6dd8;
   --pt-hi: #3d4bd6;
   --coral: #bf3b1f;
   --mint: #137a52;
@@ -50,7 +51,8 @@
     --accent-deco: #f5b84b;
     --on: #14100a;
     --field: #7c86a8;
-    --pt-lo: #4b5bd6;
+    --line-strong: var(--field);
+    --pt-lo: #6573f2;
     --pt-hi: #8fa0ff;
     --coral: #ff8a6e;
     --mint: #4ade9a;
@@ -78,7 +80,8 @@
   --accent-deco: #f5b84b;
   --on: #14100a;
   --field: #7c86a8;
-  --pt-lo: #4b5bd6;
+  --line-strong: var(--field);
+  --pt-lo: #6573f2;
   --pt-hi: #8fa0ff;
   --coral: #ff8a6e;
   --mint: #4ade9a;
@@ -105,6 +108,7 @@
   --color-accent: var(--accent);
   --color-on: var(--on);
   --color-field: var(--field);
+  --color-line-strong: var(--line-strong);
   --font-sans: 'Inter Variable', system-ui, sans-serif;
   --font-title: 'Fraunces Variable', Georgia, serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
@@ -117,27 +121,30 @@
   --z: 1;
   --rail-top: calc(60px * var(--z) + 24px);
 }
-@media (min-width: 2100px) {
+/* The zoom steps follow the window's height as well as its width: an ultrawide 3440x1440 is as tall
+   as a 1440p screen and gets that screen's scale, not a 4K one (the hero alone would be taller than
+   the window). Thresholds sit below the nominal heights to allow for browser chrome. */
+@media (min-width: 2100px) and (min-height: 1000px) {
   :root {
     --z: 1.05;
   }
 }
-@media (min-width: 2300px) {
+@media (min-width: 2300px) and (min-height: 1100px) {
   :root {
     --z: 1.15;
   }
 }
-@media (min-width: 2560px) {
+@media (min-width: 2560px) and (min-height: 1200px) {
   :root {
     --z: 1.28;
   }
 }
-@media (min-width: 2900px) {
+@media (min-width: 2900px) and (min-height: 1500px) {
   :root {
     --z: 1.5;
   }
 }
-@media (min-width: 3300px) {
+@media (min-width: 3300px) and (min-height: 1800px) {
   :root {
     --z: 1.75;
   }
@@ -145,6 +152,25 @@
 
 html {
   background: var(--bg);
+  /* a focused element is never left under the sticky top bar (WCAG 2.4.11) */
+  scroll-padding-top: calc(var(--rail-top) + 8px);
+}
+
+/* Skip link: first thing in the tab order, visible only while focused (WCAG 2.4.1). */
+.skip {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on);
+  font-weight: 700;
+  text-decoration: none;
+}
+.skip:focus {
+  top: 8px;
 }
 body {
   margin: 0;
@@ -154,7 +180,7 @@ body {
   background-position: var(--bg-pos, 0 0);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.55;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -246,7 +272,7 @@ body::before {
     height: 60px;
   }
   .brand {
-    font: 700 19px var(--font-sans);
+    font: 700 1.1875rem var(--font-sans);
     color: var(--text);
     text-decoration: none;
     margin-right: auto;
@@ -257,7 +283,7 @@ body::before {
   .navlink {
     color: var(--muted);
     text-decoration: none;
-    font-size: 14px;
+    font-size: 0.875rem;
     padding: 6px 10px;
     border-radius: 8px;
   }
@@ -266,10 +292,10 @@ body::before {
   }
   .navlink.on {
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
   .btn {
-    font: 600 14px/1 var(--font-sans);
+    font: 600 0.875rem/1 var(--font-sans);
     padding: 12px 16px;
     border-radius: 10px;
     border: 1px solid transparent;
@@ -303,20 +329,20 @@ body::before {
   }
   .btn.lg {
     padding: 15px 22px;
-    font-size: 15px;
+    font-size: 0.9375rem;
   }
   .btn[disabled] {
     opacity: 0.5;
   }
   .label {
-    font: 600 11px var(--font-mono);
-    letter-spacing: 0.14em;
+    font: 600 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
   }
   .eyebrow {
-    font: 600 11px var(--font-mono);
-    letter-spacing: 0.2em;
+    font: 600 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--accent);
   }
@@ -332,27 +358,30 @@ body::before {
     padding: 3px 11px;
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-size: 13px;
+    font-size: 0.8125rem;
     background: transparent;
     color: var(--text);
   }
   button.chip {
     cursor: pointer;
-    font: 600 13px var(--font-sans);
+    font: 600 0.8125rem var(--font-sans);
+    border-color: var(--line-strong);
+    min-height: 28px;
   }
   .chip.sel {
     background: color-mix(in srgb, var(--accent) 14%, var(--surface));
     border-color: var(--accent);
+    border-width: 2px;
     color: var(--accent);
-    font-weight: 600;
+    font-weight: 700;
   }
   .stars {
     display: inline-flex;
     color: var(--accent);
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .stars .off {
-    color: var(--line);
+    color: var(--line-strong);
   }
   .panel {
     background: var(--surface);
@@ -361,20 +390,20 @@ body::before {
     padding: 22px;
   }
   .panel h2 {
-    font: 600 20px var(--font-title);
+    font: 600 1.25rem var(--font-title);
     margin: 0;
   }
   .pagehead {
     padding: 34px 0 8px;
   }
   .pagehead h1 {
-    font: 700 clamp(34px, 4.4vw, 54px) / 1.02 var(--font-title);
+    font: 700 clamp(2.125rem, 4.4vw, 3.375rem) / 1.02 var(--font-title);
     letter-spacing: -0.02em;
     margin: 8px 0 10px;
   }
   .sec {
-    font: 700 12px var(--font-mono);
-    letter-spacing: 0.14em;
+    font: 700 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
     margin: 30px 0 14px;
@@ -420,14 +449,14 @@ body::before {
   }
   .poster span {
     position: relative;
-    font: 700 clamp(11px, 1vw, 14px) / 1.15 var(--font-title);
+    font: 700 clamp(0.75rem, 1vw, 0.875rem) / 1.15 var(--font-title);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
   }
   .poster.sm {
     padding: 5px;
   }
   .poster.sm span {
-    font-size: 10px;
+    font-size: 0.75rem;
   }
   .pw {
     position: relative;
@@ -441,7 +470,7 @@ body::before {
     display: inline-flex;
     gap: 7px;
     align-items: center;
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--muted);
   }
   .sig span::before {
@@ -470,12 +499,12 @@ body::before {
     gap: 10px;
   }
   .gauge b {
-    font: 600 34px/1 var(--font-mono);
+    font: 600 2.125rem/1 var(--font-mono);
     color: var(--accent);
   }
   .gauge small {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .fc {
     flex: 0 0 148px;
@@ -483,11 +512,11 @@ body::before {
     display: grid;
     gap: 6px;
     align-content: start;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
   .fc b {
     display: block;
-    font: 600 14px/1.25 var(--font-title);
+    font: 600 0.875rem/1.25 var(--font-title);
   }
   .fc figcaption b {
     min-height: 2.5em;
@@ -514,17 +543,17 @@ body::before {
   .fc .sc b {
     display: inline;
     min-height: 0;
-    font: 600 20px/1 var(--font-mono);
+    font: 600 1.25rem/1 var(--font-mono);
     color: var(--accent);
   }
   .fc .sc span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.75rem;
   }
   .fc .dv {
     display: flex;
     gap: 8px;
-    font: 600 11px var(--font-mono);
+    font: 600 0.75rem var(--font-mono);
   }
   .fc .dv span {
     display: flex;
@@ -536,6 +565,21 @@ body::before {
     height: 8px;
     border-radius: 50%;
     flex: none;
+  }
+  /* A wrapping grid of film cards (browse pages), where .row is a sideways strip. */
+  .fgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 148px);
+    justify-content: space-between;
+    gap: 22px 14px;
+  }
+  a.chip {
+    text-decoration: none;
+    color: var(--text);
+  }
+  a.chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
   .row {
     display: flex;
@@ -566,10 +610,10 @@ body::before {
     grid-template-columns: 110px 1fr 42px;
     gap: 10px;
     align-items: center;
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .gbars > div > span:last-child {
-    font: 600 12px var(--font-mono);
+    font: 600 0.75rem var(--font-mono);
     color: var(--accent);
     text-align: right;
   }
@@ -586,7 +630,7 @@ body::before {
   }
   .tile b {
     display: block;
-    font: 600 24px/1.25 var(--font-mono);
+    font: 600 1.5rem/1.25 var(--font-mono);
   }
   .tile.hl {
     border-color: var(--accent);
@@ -609,7 +653,7 @@ body::before {
     align-items: center;
     height: 100%;
     gap: 4px;
-    font: 600 11px var(--font-mono);
+    font: 600 0.75rem var(--font-mono);
     color: var(--muted);
   }
   .hist i {
@@ -666,6 +710,10 @@ body::before {
   }
   .backdrop {
     aspect-ratio: 2.39/1;
+    /* On short windows (laptops) the cinematic ratio makes the hero taller than the screen, so cap
+       the still at a share of the window height. Divided by the page zoom, which scales vh too. */
+    width: 100%;
+    max-height: max(220px, calc(44vh / var(--z)));
     position: relative;
     background: linear-gradient(
       105deg,
@@ -707,13 +755,6 @@ body::before {
     height: 100%;
     opacity: 0.4;
   }
-  .backdrop span {
-    position: relative;
-    z-index: 2;
-    font: 600 11px var(--font-mono);
-    letter-spacing: 0.3em;
-    color: #eceaf4;
-  }
   .hero-body {
     display: grid;
     grid-template-columns: 210px 1fr;
@@ -734,7 +775,7 @@ body::before {
     padding-top: 26px;
   }
   .hero h1 {
-    font: 700 clamp(40px, 5.4vw, 68px) / 0.98 var(--font-title);
+    font: 700 clamp(2.5rem, 5.4vw, 4.25rem) / 0.98 var(--font-title);
     letter-spacing: -0.02em;
     margin: 8px 0 10px;
   }
@@ -743,7 +784,7 @@ body::before {
     flex-wrap: wrap;
     gap: 4px 16px;
     color: var(--muted);
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .hero .sig {
     margin: 14px 0;
@@ -757,7 +798,7 @@ body::before {
     align-items: center;
     flex-wrap: wrap;
     margin-top: 14px;
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--muted);
   }
   .avail .chip {
@@ -798,11 +839,11 @@ body::before {
     border-radius: 50%;
     border: 1px solid var(--accent);
     color: var(--accent);
-    font: 700 13px var(--font-mono);
+    font: 700 0.8125rem var(--font-mono);
   }
   .reasons p {
     color: var(--muted);
-    font-size: 14px;
+    font-size: 0.875rem;
     margin: 0;
   }
   .reasons b {
@@ -810,21 +851,21 @@ body::before {
   }
   .reasons .award {
     display: block;
-    font: 600 10px var(--font-mono);
-    letter-spacing: 0.14em;
+    font: 600 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--accent);
     margin-bottom: 2px;
   }
   .reasons .sim {
-    font: 600 12px var(--font-mono);
+    font: 600 0.75rem var(--font-mono);
     color: var(--accent);
     margin-left: 6px;
   }
   .tag {
     display: inline-block;
-    font: 700 10px var(--font-mono);
-    letter-spacing: 0.14em;
+    font: 700 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     border: 1px solid var(--coral);
     color: var(--coral);
@@ -840,7 +881,7 @@ body::before {
   }
   .sp p {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 0.8125rem;
     margin: 6px 0 0;
   }
   @media (max-width: 980px) {
@@ -861,12 +902,7 @@ body::before {
       padding-top: 16px;
     }
     .hero h1 {
-      font-size: 34px;
-    }
-  }
-  @media (max-width: 720px) {
-    .backdrop span:last-of-type {
-      display: none;
+      font-size: 2.125rem;
     }
   }
   @media (max-width: 480px) {
@@ -912,13 +948,13 @@ body::before {
   }
   .shelf .feat h2 {
     grid-column: 1/-1;
-    font: 700 26px/1.05 var(--font-title);
+    font: 700 1.625rem/1.05 var(--font-title);
     letter-spacing: -0.01em;
   }
   .shelf .feat h2 small {
     display: block;
-    font: 600 11px var(--font-mono);
-    letter-spacing: 0.14em;
+    font: 600 0.75rem var(--font-mono);
+    letter-spacing: 0.08em;
     color: var(--muted);
     margin-top: 6px;
     text-transform: uppercase;
@@ -945,7 +981,7 @@ body::before {
     background: var(--accent);
   }
   .prog span {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--muted);
   }
   .prog b {
@@ -957,7 +993,7 @@ body::before {
     align-content: start;
   }
   .shelf .feat .bm b {
-    font: 600 17px/1.2 var(--font-title);
+    font: 600 1.0625rem/1.2 var(--font-title);
   }
   .shelf .strip {
     padding: 20px 20px 6px 0;
@@ -986,7 +1022,7 @@ body::before {
     top: 6px;
     left: 6px;
     z-index: 3;
-    font: 700 10px var(--font-mono);
+    font: 700 0.75rem var(--font-mono);
     letter-spacing: 0.06em;
     padding: 3px 6px;
     border-radius: 5px;
@@ -1009,18 +1045,18 @@ body::before {
     border-color: transparent;
   }
   .pct {
-    font: 600 12px var(--font-mono);
+    font: 600 0.75rem var(--font-mono);
     color: var(--accent);
   }
   .mine {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--muted);
     display: flex;
     gap: 6px;
     align-items: center;
   }
   .mine .stars {
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   @media (max-width: 980px) {
     .shelf {
@@ -1047,10 +1083,10 @@ body::before {
     gap: 9px;
     padding: 8px 16px;
     border-radius: 999px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     background: var(--surface);
     color: var(--text);
-    font: 600 14px var(--font-sans);
+    font: 600 0.875rem var(--font-sans);
     cursor: pointer;
   }
   .svc button[aria-pressed='true'] {
@@ -1078,13 +1114,13 @@ body::before {
     margin: 24px 0 14px;
   }
   .stat h2 {
-    font: 700 clamp(24px, 2.8vw, 34px) / 1.05 var(--font-title);
+    font: 700 clamp(1.5rem, 2.8vw, 2.125rem) / 1.05 var(--font-title);
     letter-spacing: -0.01em;
     margin: 0;
   }
   .stat span {
     color: var(--muted);
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .deck {
     display: grid;
@@ -1112,7 +1148,7 @@ body::before {
     overflow: hidden;
   }
   .card h2 {
-    font: 700 38px/1 var(--font-title);
+    font: 700 2.375rem/1 var(--font-title);
     letter-spacing: -0.02em;
     margin: 6px 0 4px;
   }
@@ -1150,16 +1186,16 @@ body::before {
     background: var(--surface2);
   }
   .cc b {
-    font: 600 14px/1.2 var(--font-title);
+    font: 600 0.875rem/1.2 var(--font-title);
     display: block;
   }
   .cc small {
     color: var(--muted);
     display: block;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .cc .pc {
-    font: 600 13px var(--font-mono);
+    font: 600 0.8125rem var(--font-mono);
     color: var(--accent);
   }
   @media (max-width: 980px) {
@@ -1173,7 +1209,184 @@ body::before {
       height: 420px;
     }
     .card h2 {
-      font-size: 26px;
+      font-size: 1.625rem;
     }
   }
+  /* Phones: the stack of cards becomes one card that grows with its content, poster above text.
+     A fixed-height card clipped its details at this width (WCAG 1.4.10 reflow). */
+  @media (max-width: 720px) {
+    .stack {
+      height: auto;
+    }
+    .card {
+      position: relative;
+      inset: auto;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      padding: 18px;
+      overflow: visible;
+    }
+    .card .pw {
+      max-width: 140px;
+    }
+    .card.p1,
+    .card.p2 {
+      display: none;
+    }
+    .card h2 {
+      font-size: 1.75rem;
+    }
+  }
+}
+
+/* Links inside running text are underlined so they do not rely on colour alone (WCAG 1.4.1).
+   Unclassed anchors only: card titles and buttons carry their own classes and keep their look. */
+main a:not([class]),
+footer a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- user settings (/settings) */
+
+/* Reduce motion, chosen in the app: the same as the system setting above. */
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}
+:root[data-motion='reduce'] .press,
+:root[data-motion='reduce'] .press:hover,
+:root[data-motion='reduce'] .press:active {
+  transform: none;
+}
+
+/* High contrast: pure black on white (or white on black), every border and signal colour at 7:1 or
+   better where it carries meaning, no translucency or texture behind text, a heavier focus ring.
+   Chosen in the app, or followed from the system's "more contrast" setting. Four blocks because
+   the dark palette is reached two ways (system dark, and chosen dark), as above. */
+:root[data-contrast='more'] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface2: #f0f0f0;
+  --line: #595959;
+  --line-strong: #000000;
+  --field: #000000;
+  --text: #000000;
+  --muted: #333333;
+  --accent: #5a3600;
+  --accent-deco: #5a3600;
+  --on: #ffffff;
+  --coral: #8a1f00;
+  --mint: #0a5a3a;
+  --sky: #1c2aa0;
+  --pt-lo: #1c2aa0;
+  --pt-hi: #1c2aa0;
+  --shadow: none;
+  --beam: 0;
+  --vig: transparent;
+  --bg-pattern: none;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-contrast='more']:not([data-theme='light']) {
+    --bg: #000000;
+    --surface: #000000;
+    --surface2: #1a1a1a;
+    --line: #a6a6a6;
+    --line-strong: #ffffff;
+    --field: #ffffff;
+    --text: #ffffff;
+    --muted: #e0e0e0;
+    --accent: #ffd36b;
+    --accent-deco: #ffd36b;
+    --on: #000000;
+    --coral: #ffb09a;
+    --mint: #8affc4;
+    --sky: #b8c4ff;
+    --pt-lo: #b8c4ff;
+    --pt-hi: #b8c4ff;
+    --shadow: none;
+    --beam: 0;
+    --vig: transparent;
+    --bg-pattern: none;
+    color-scheme: dark;
+  }
+}
+:root[data-contrast='more'][data-theme='dark'] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface2: #1a1a1a;
+  --line: #a6a6a6;
+  --line-strong: #ffffff;
+  --field: #ffffff;
+  --text: #ffffff;
+  --muted: #e0e0e0;
+  --accent: #ffd36b;
+  --accent-deco: #ffd36b;
+  --on: #000000;
+  --coral: #ffb09a;
+  --mint: #8affc4;
+  --sky: #b8c4ff;
+  --pt-lo: #b8c4ff;
+  --pt-hi: #b8c4ff;
+  --shadow: none;
+  --beam: 0;
+  --vig: transparent;
+  --bg-pattern: none;
+  color-scheme: dark;
+}
+:root[data-contrast='more'] .top::before {
+  background: var(--bg);
+  backdrop-filter: none;
+}
+:root[data-contrast='more'] :focus-visible {
+  outline-width: 4px;
+  outline-offset: 3px;
+}
+:root[data-contrast='more'] .panel,
+:root[data-contrast='more'] .chip,
+:root[data-contrast='more'] .tile,
+:root[data-contrast='more'] .hero-body,
+:root[data-contrast='more'] .lb {
+  border-color: var(--line-strong);
+}
+:root[data-contrast='more'] a:not(.btn):not(.brand):not(.navlink) {
+  text-decoration-line: underline;
+}
+
+/* Dyslexia-friendly reading: Atkinson Hyperlegible (loaded only when this is switched on, see
+   settings.ts), more space between letters, words and lines, no all-capitals or wide tracking, and
+   text kept left-aligned. */
+:root[data-reading='dyslexia'] {
+  --font-sans: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-title: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-mono: 'Atkinson Hyperlegible', system-ui, sans-serif;
+}
+:root[data-reading='dyslexia'] body {
+  letter-spacing: 0.05em;
+  word-spacing: 0.16em;
+  line-height: 1.7;
+}
+:root[data-reading='dyslexia'] p,
+:root[data-reading='dyslexia'] li {
+  text-align: left;
+  max-width: 70ch;
+}
+:root[data-reading='dyslexia'] .label,
+:root[data-reading='dyslexia'] .eyebrow,
+:root[data-reading='dyslexia'] .sec,
+:root[data-reading='dyslexia'] .tag,
+:root[data-reading='dyslexia'] .reasons .award,
+:root[data-reading='dyslexia'] .shelf .feat h2 small,
+:root[data-reading='dyslexia'] .chip {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+:root[data-reading='dyslexia'] h1,
+:root[data-reading='dyslexia'] h2 {
+  letter-spacing: 0.01em;
+  line-height: 1.25;
 }

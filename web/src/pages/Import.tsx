@@ -13,13 +13,13 @@ export function Landing() {
   const { profile } = useProfile()
   if (profile) return <Navigate to="/for-you" replace />
   return (
-    <Shell nav={false}>
+    <Shell nav={false} ads={false}>
       <div className="mx-auto flex max-w-[720px] flex-col gap-7 pb-6 pt-9 lg:gap-9 lg:pb-10 lg:pt-[72px]">
         <div className="flex flex-col gap-2.5 text-center lg:gap-3.5">
-          <h1 className="m-0 text-balance text-[34px] font-bold leading-[1.08] tracking-[-0.01em] sm:text-[44px] lg:text-[56px]">
+          <h1 className="m-0 text-balance text-[2.125rem] font-bold leading-[1.08] tracking-[-0.01em] sm:text-[2.75rem] lg:text-[3.5rem]">
             Bring your Letterboxd history
           </h1>
-          <p className="m-0 text-balance text-[17px] text-muted lg:text-[21px]">
+          <p className="m-0 text-balance text-[1.0625rem] text-muted lg:text-[1.3125rem]">
             PlotPoints compares what you rate highly with 23,747 films and ranks the ones you have
             not seen.
           </p>
@@ -27,7 +27,7 @@ export function Landing() {
         <div className="rounded-2xl bg-surface p-5 sm:p-8 lg:rounded-[14px] lg:p-9">
           <ImportForm />
         </div>
-        <p className="m-0 text-center text-[15px] text-muted lg:text-[17px]">
+        <p className="m-0 text-center text-[0.9375rem] text-muted lg:text-[1.0625rem]">
           Not sure how to export? In Letterboxd, open Settings, then Import &amp; Export, then Export
           Your Data.
         </p>
@@ -62,7 +62,7 @@ export function ImportReturning() {
   }
 
   return (
-    <Shell>
+    <Shell title="Import" ads={false}>
       <PageTitle title="Your history">
         The more films you rate, the sharper the matches. Add an export any time, or start over as
         someone else.
@@ -70,16 +70,16 @@ export function ImportReturning() {
 
       <section className="flex flex-wrap items-stretch gap-6 pt-8 lg:gap-7 lg:pt-9">
         <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-5 rounded-[14px] bg-surface p-6 lg:p-10">
-          <div className="text-[15px] font-bold uppercase tracking-[0.16em] text-muted">
+          <h2 className="m-0 text-[0.9375rem] font-bold uppercase tracking-[0.08em] text-muted">
             Current profile
-          </div>
-          <div className="text-[34px] font-bold leading-[1.05] tracking-[-0.01em] lg:text-5xl">
+          </h2>
+          <div className="text-[2.125rem] font-bold leading-[1.05] tracking-[-0.01em] lg:text-5xl">
             {profile.name}
           </div>
-          <div className="text-[56px] font-bold leading-none tabular-nums text-accent lg:text-[76px]">
+          <div className="text-[3.5rem] font-bold leading-none tabular-nums text-accent lg:text-[4.75rem]">
             {profile.matched.toLocaleString()} films
           </div>
-          <div className="-mt-2.5 text-[17px] text-muted lg:text-[19px]">
+          <div className="-mt-2.5 text-[1.0625rem] text-muted lg:text-[1.1875rem]">
             {rated.toLocaleString()} rated
             {profile.unmatched > 0 && ` · ${profile.unmatched.toLocaleString()} not in the catalog`}
             {' · imported '}
@@ -98,13 +98,13 @@ export function ImportReturning() {
                 setProfile(null)
                 navigate('/')
               }}
-              className="press min-h-[52px] cursor-pointer rounded-xl border-0 bg-accent px-7 py-3.5 text-lg font-bold text-on lg:min-h-14 lg:text-[19px]"
+              className="press min-h-[52px] cursor-pointer rounded-xl border-0 bg-accent px-7 py-3.5 text-lg font-bold text-on lg:min-h-14 lg:text-[1.1875rem]"
             >
               Switch user
             </button>
             <Link
               to="/for-you"
-              className="press inline-flex min-h-[52px] items-center rounded-xl bg-surface2 px-7 text-lg font-bold text-ink no-underline lg:min-h-14 lg:text-[19px]"
+              className="press inline-flex min-h-[52px] items-center rounded-xl bg-surface2 px-7 text-lg font-bold text-ink no-underline lg:min-h-14 lg:text-[1.1875rem]"
             >
               Back to my list
             </Link>
@@ -112,9 +112,9 @@ export function ImportReturning() {
         </div>
 
         <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-5 rounded-[14px] bg-surface p-6 lg:p-10">
-          <div className="text-[15px] font-bold uppercase tracking-[0.16em] text-muted">
+          <h2 className="m-0 text-[0.9375rem] font-bold uppercase tracking-[0.08em] text-muted">
             Add more history
-          </div>
+          </h2>
           <ImportForm mode="add" />
         </div>
       </section>

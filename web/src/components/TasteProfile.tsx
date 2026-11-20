@@ -85,7 +85,16 @@ function Body({ s, missing }: { s: ProfileStats; missing: MissingFilm[] }) {
         </div>
         <div className="tile">
           <p className="label m-0">Average</p>
-          <b>{s.average_rating != null ? `${s.average_rating.toFixed(1)} ★` : '–'}</b>
+          <b>
+            {s.average_rating != null ? (
+              <>
+                {s.average_rating.toFixed(1)} <span aria-hidden="true">★</span>
+                <span className="sr-only"> out of 5</span>
+              </>
+            ) : (
+              '–'
+            )}
+          </b>
         </div>
         <div className="tile">
           <p className="label m-0">Not in catalog</p>

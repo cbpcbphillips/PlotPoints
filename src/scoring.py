@@ -102,6 +102,18 @@ class _Member:
     disliked_idx: np.ndarray
     disliked_w: np.ndarray
     w_max: float
+    # Weights behind the "because" notes. The score uses `liked_w`, in which a franchise shares one
+    # vote (DAMPEN_POWER); the notes use the person's own, undamped weights, so a Spider-Man pick
+    # is explained by the Spider-Man films they rated and not out-voted by a one-off favourite
+    # whose similarity is much lower. Defaults to `liked_w` when no separate weights are given.
+    reason_w: np.ndarray | None = None
+    reason_w_max: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.reason_w is None:
+            self.reason_w = self.liked_w
+        if self.reason_w_max <= 0:
+            self.reason_w_max = float(self.reason_w.max())
 
 
 def quality_array(snap: Snapshot, prior_votes: int = QUALITY_PRIOR_VOTES) -> np.ndarray:
@@ -113,10 +125,11 @@ def quality_array(snap: Snapshot, prior_votes: int = QUALITY_PRIOR_VOTES) -> np.
     return q
 
 
-def _split(profiles: Profile) -> list[_Member]:
+def _split(profiles: Profile, reasons: Profile | None = None) -> list[_Member]:
     members = []
     for name in sorted(profiles):
         liked = [(i, w) for i, w in profiles[name] if w is not None and w > 0]
+        raw = {i: w for i, w in (reasons or {}).get(name, []) if w is not None and w > 0}
         disliked = [(i, w) for i, w in profiles[name] if w is not None and w < 0]
         if not liked:
             raise ValueError(f"{name} has no liked films (rated above {RATING_MIDPOINT}).")
@@ -128,6 +141,7 @@ def _split(profiles: Profile) -> list[_Member]:
                 disliked_idx=np.array([i for i, _ in disliked], dtype=np.int64),
                 disliked_w=np.array([w for _, w in disliked], dtype=np.float64),
                 w_max=max(w for _, w in liked),
+                reason_w=np.array([raw.get(i, w) for i, w in liked], dtype=np.float64),
             )
         )
     return members
@@ -253,7 +267,7 @@ def _because(snap: Snapshot, row_idx: int, scored: dict, top_n: int) -> list[dic
     sims = (snap.vectors[m.liked_idx] @ snap.vectors[row_idx]).astype(np.float64)
     std = np.where(scored["liked_std"] == 0, np.nan, scored["liked_std"])
     z = np.nan_to_num((sims - scored["liked_mean"]) / std, nan=0.0)
-    contrib = z * (m.liked_w / m.w_max)
+    contrib = z * (m.reason_w / m.reason_w_max)
     order = np.argsort(-contrib, kind="stable")[:top_n]
     return [
         {
@@ -277,14 +291,18 @@ def rank(
     min_runtime: int = MIN_RUNTIME_MINUTES,
     min_votes: int = CANDIDATE_MIN_VOTES,
     allow: np.ndarray | None = None,
+    reasons: Profile | None = None,
 ) -> list[dict]:
     """Rank unwatched titles for one profile or a group (least-misery). Mirrors SCORE_SQL.
+
+    `reasons` is the same profile with undamped weights; it only changes which liked films the
+    "because" notes name and never a score (see `_Member.reason_w`).
 
     `allow` is an optional boolean mask over the catalog (e.g. "streams on Netflix"). It is applied
     AFTER the per-seed standardization, so a filter changes which titles compete, never what any
     title scores: restricting the pool first would shift every z-score.
     """
-    members = _split(profiles)
+    members = _split(profiles, reasons)
     cand = _candidates(snap, profiles, min_runtime, min_votes)
     q = quality_array(snap)
     per_member = [
@@ -405,6 +423,73 @@ def diversify(
             per_franchise[f] += 1
         nearest = np.maximum(nearest, redundancy[best])
     return [pool[j] for j in picked]
+
+
+# "Another side of your taste": a pick from a different region of the person's taste than the top
+# pick, but still rooted in films they have seen. A reasoned default, not a fitted one.
+BEYOND_MIN_ANCHORS = 2  # close rated films needed: a cluster, not an outlier
+BEYOND_ANCHOR_COSINE = 0.45  # about the median "because" cosine on the current embedding model
+
+
+def beyond_pick(
+    snap: Snapshot,
+    ranked: list[dict],
+    top: dict,
+    *,
+    exclude: list[int] | tuple[int, ...] = (),
+    min_anchors: int = BEYOND_MIN_ANCHORS,
+    anchor_cosine: float = BEYOND_ANCHOR_COSINE,
+) -> dict | None:
+    """The best-ranked film from a different corner of the person's taste than `top`.
+
+    A film qualifies when all of these hold:
+      * it is not the top pick, nor in the top pick's franchise or its reasons' franchises;
+      * it sits in the far half of the ranked pool from the top pick (cosine below the pool's
+        median to it), so it is a different region of the space, not a near neighbour;
+      * at least `min_anchors` of the liked films that explain it are close (cosine >=
+        `anchor_cosine`), so it belongs to a cluster of films the person has actually seen;
+      * its reasons overlap the top pick's reasons in no film (first pass) or in one (fallback).
+
+    `ranked` is the ranked pool (best first) and `top` its first entry. Returns that entry, or
+    None when nothing qualifies, and the caller simply shows no such pick. Everything still comes
+    from the person's own ranking; this picks among it, it never invents.
+    """
+    top_row = top["index"]
+
+    def reason_ids(r: dict) -> set[int]:
+        return {b["tmdb_id"] for m in r["members"] for b in m["because"]}
+
+    def franchise_of_id(tmdb_id: int) -> str | None:
+        i = snap.by_tmdb.get(("movie", tmdb_id))
+        return None if i is None else snap.franchise[i]
+
+    top_ids = reason_ids(top)
+    top_franchises = {snap.franchise[top_row]} | {franchise_of_id(i) for i in top_ids}
+    top_franchises.discard(None)
+
+    skip = {int(i) for i in exclude} | {top_row}
+    pool = [r for r in ranked if r["index"] not in skip]
+    if not pool:
+        return None
+    sims = snap.vectors[[r["index"] for r in pool]] @ snap.vectors[top_row]
+    far = float(np.median(sims))
+
+    for allowed_overlap in (0, 1):
+        for r, sim in zip(pool, sims, strict=True):
+            if sim >= far:
+                continue
+            if snap.franchise[r["index"]] in top_franchises:
+                continue
+            ids = reason_ids(r)
+            if len(ids & top_ids) > allowed_overlap:
+                continue
+            if any(franchise_of_id(i) in top_franchises for i in ids - top_ids):
+                continue
+            close = [b for m in r["members"] for b in m["because"] if b["cosine"] >= anchor_cosine]
+            if len({b["tmdb_id"] for b in close}) < min_anchors:
+                continue
+            return r
+    return None
 
 
 def closest_rated(

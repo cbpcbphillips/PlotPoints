@@ -1,5 +1,7 @@
 import type {
   CsvRow,
+  Facet,
+  FacetList,
   Film,
   FilmDetail,
   FilmForMe,
@@ -7,6 +9,7 @@ import type {
   ImportedFilm,
   MatchResponse,
   Meta,
+  Person,
   ProfileStats,
   RecommendResponse,
   SimilarFilm,
@@ -60,6 +63,8 @@ export interface RecommendBody {
   bundle?: boolean
   /** Size of the varied second row; honoured on the first, unfiltered page only. */
   branch_out?: number
+  /** Browse: only films matching all of these (one per kind). */
+  facets?: Facet[]
 }
 
 export const api = {
@@ -74,6 +79,11 @@ export const api = {
     }),
   match: (rows: CsvRow[]) =>
     post<MatchResponse>('/match', { rows }),
+  facets: () => request<FacetList>('/facets'),
+  people: (kind: 'director' | 'actor', q = '', limit = 12) =>
+    request<{ people: Person[] }>(
+      `/people?kind=${kind}&q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
   recommend: (body: RecommendBody) => post<RecommendResponse>('/recommend', body),
   profile: (films: Film[]) => post<ProfileStats>('/profile', { films }),
   franchises: (body: RecommendBody) =>

@@ -1,24 +1,24 @@
 import { Link } from 'react-router-dom'
 import type { Result } from '../lib/types'
-import { FilmLink } from './FilmLink'
+import { FilmLink, PosterLink } from './FilmLink'
 import { Poster } from './Poster'
 import { SignalRow } from './Signals'
 
 /** One recommendation in a reel: poster, title, year and rank, the score, then the three signals. */
-export function FilmCard({ r }: { r: Result }) {
+export function FilmCard({ r, rankLabel = 'overall' }: { r: Result; rankLabel?: string }) {
   return (
     <figure className="fc m-0">
       <div className="pw">
-        <FilmLink id={r.tmdb_id} label={`${r.title} details`}>
+        <PosterLink id={r.tmdb_id}>
           <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
-        </FilmLink>
+        </PosterLink>
       </div>
       <figcaption>
         <b>
           <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
         </b>
         <small>
-          {r.year} · #{r.rank} overall
+          {r.year} · #{r.rank} {rankLabel}
         </small>
         {r.bundle && (
           <small>

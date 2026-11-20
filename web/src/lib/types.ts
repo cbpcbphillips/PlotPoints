@@ -22,6 +22,17 @@ export interface Bundle {
   films: { tmdb_id: number; title: string; year: number | null }[]
 }
 
+/** A film of the same series the person has already rated. */
+export interface SeriesFilm {
+  tmdb_id: number
+  media_key: string
+  title: string
+  year: number | null
+  rating: number | null
+  tmdb_rating: number | null
+  poster_path: string | null
+}
+
 export interface Result {
   rank: number
   tmdb_id: number
@@ -44,6 +55,8 @@ export interface Result {
   overall_rank?: number | null
   /** Set when this row stands for a whole franchise: how many other films it folds in. */
   bundle?: Bundle | null
+  /** The films of this pick's series the person has already rated, oldest first. */
+  series_seen?: SeriesFilm[]
   members: { member: string; match: number; because: Because[] }[]
 }
 
@@ -59,6 +72,30 @@ export interface Enjoyed {
   avg_match: number
 }
 
+export type FacetKind = 'genre' | 'director' | 'actor' | 'era'
+
+/** Browse: restrict a ranking to one genre, director, billed actor or decade. */
+export interface Facet {
+  kind: FacetKind
+  value: string
+}
+
+/** What a set of filters resolved to: the catalog's spelling, and how many films match all. */
+export interface FacetInfo {
+  facets: Facet[]
+  total: number
+}
+
+export interface FacetList {
+  genres: { name: string; count: number }[]
+  decades: { decade: number; count: number }[]
+}
+
+export interface Person {
+  name: string
+  count: number
+}
+
 export interface RecommendResponse {
   snapshot: string
   group: boolean
@@ -68,8 +105,16 @@ export interface RecommendResponse {
   enjoyed: Enjoyed[] | null
   /** A varied second row: from the person's ranking, spread away from the first page. */
   branch_out?: Result[] | null
+  /** A pick from another corner of the person's taste than the top pick; first page only. */
+  beyond?: Result | null
+  /** Set when the request asked for a facet. */
+  facet?: FacetInfo | null
   has_more: boolean
   unmatched_films: number
+  /** Films rated above 3 stars that are in the catalog: what the picks are measured against. */
+  liked_films: number
+  /** Films with any rating that are in the catalog. */
+  rated_films: number
   pool_size?: number
   pool_matches?: number
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 MAX_FILMS = 20000  # a heavy Letterboxd history is ~10k films; the payload is ~1 MB
 MAX_MEMBERS = 6
@@ -26,6 +26,13 @@ class Member(BaseModel):
     films: list[Film] = Field(max_length=MAX_FILMS)
 
 
+class Facet(BaseModel):
+    """Restrict the ranking to one genre, director, billed actor or decade."""
+
+    kind: Literal["genre", "director", "actor", "era"]
+    value: str = Field(min_length=1, max_length=80)
+
+
 class RecommendRequest(BaseModel):
     members: list[Member] = Field(min_length=1, max_length=MAX_MEMBERS)
     providers: list[str] = Field(default_factory=list, max_length=50)
@@ -35,6 +42,16 @@ class RecommendRequest(BaseModel):
     bundle: bool = False
     # Size of the varied second row; only returned with the first page, and only unfiltered.
     branch_out: int = Field(default=0, ge=0, le=24)
+    # Browse: only titles that match ALL of these (one per kind): a genre, a director, a billed
+    # actor, a decade.
+    facets: list[Facet] = Field(default_factory=list, max_length=4)
+
+    @field_validator("facets")
+    @classmethod
+    def one_facet_per_kind(cls, v: list[Facet]) -> list[Facet]:
+        if len({f.kind for f in v}) != len(v):
+            raise ValueError("Use at most one filter of each kind.")
+        return v
 
 
 class ProfileRequest(BaseModel):

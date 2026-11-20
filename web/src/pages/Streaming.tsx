@@ -1,9 +1,9 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { FilmLink } from '../components/FilmLink'
+import { FilmLink, PosterLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
-import { Shell } from '../components/Shell'
+import { Ad, Shell } from '../components/Shell'
 import { Gauge, Sig } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
 import { api } from '../lib/api'
@@ -116,12 +116,12 @@ function StreamingFor({ profile }: { profile: Profile }) {
     .slice(0, SHOWN)
 
   return (
-    <Shell>
+    <Shell title="Streaming">
       <section className="pagehead">
-        <p className="eyebrow m-0">What you can watch tonight</p>
         <h1>Streaming</h1>
       </section>
 
+      <Ad kind="leaderboard" />
       {meta.isPending && <Loading what="services" />}
       {meta.isError && <ErrorNote error={meta.error} retry={() => meta.refetch()} />}
       {meta.data && (
@@ -167,9 +167,13 @@ function StreamingFor({ profile }: { profile: Profile }) {
                   key={r.media_key}
                   className={`panel card p${i}${i === 0 && leaving ? ' gone' : ''}`}
                   style={{ zIndex: 3 - i }}
+                  // the cards peeking out behind the top one are decoration: not reachable by keyboard
+                  inert={i > 0}
                 >
                   <div className="pw">
-                    <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
+                    <PosterLink id={r.tmdb_id}>
+                      <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
+                    </PosterLink>
                   </div>
                   <div>
                     <p className="eyebrow m-0">
@@ -200,7 +204,7 @@ function StreamingFor({ profile }: { profile: Profile }) {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          ▶ Watch
+                          <span aria-hidden="true">▶</span> Watch
                         </a>
                         <button className="btn ghost" type="button" onClick={advance}>
                           Not tonight
@@ -218,7 +222,9 @@ function StreamingFor({ profile }: { profile: Profile }) {
             <p className="label m-0">Up next</p>
             {picks.slice(skipped + 1, skipped + 6).map(({ r }) => (
               <div key={r.media_key} className="cc">
-                <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} small />
+                <PosterLink id={r.tmdb_id}>
+                  <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} small />
+                </PosterLink>
                 <div>
                   <b>
                     <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
@@ -231,6 +237,7 @@ function StreamingFor({ profile }: { profile: Profile }) {
           </aside>
         )}
       </div>
+      <Ad kind="infeed" />
     </Shell>
   )
 }

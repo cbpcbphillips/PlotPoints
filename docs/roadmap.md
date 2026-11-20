@@ -277,6 +277,68 @@ commands are in [deploy.md](deploy.md) (written, not yet run).
        asserts no title or id appears in the logs. Counters beyond the per-import line were not
        added.
 8. [ ] Ads, only after 3 and a deployed domain exist.
+9. [x] Pre-deploy app pass, 2026-11-20 (below). Settings page, accessibility and responsive fixes,
+       placement of the ad slots; features listed under "Planned next" are not built.
+
+#### Pre-deploy app pass (2026-11-20)
+
+Done, all verified in the running app at 375, 768, 1024, 1366, 1440, 1680, 1920, 2560, 3440 and 3840
+wide, in light, dark and high contrast (text contrast swept in all four combinations, no failures):
+
+- Removed the hero captions ("NOW SHOWING", "nearest point in taste space"), the Streaming and
+  Franchises eyebrows and the film-page credit line. TMDB attribution stays on About; the
+  "via JustWatch" note stays beside the provider chips.
+- Every poster links to its film page, and each card is one tab stop (the poster link is out of the
+  tab order, the title link is the stop).
+- "Another side of your taste" replaces the franchise-diversity "Beyond" panel: `scoring.beyond_pick`
+  picks the best-ranked film in the far half of the pool from the top pick whose reasons share no
+  film or franchise with it and which has at least two close rated films behind it. Falls back to
+  one shared reason, then to nothing. `BEYOND_ANCHOR_COSINE = 0.45` is about the median reason
+  cosine on `voyage-multilingual-2`: a measured starting point, not a fitted one. Re-check it if
+  the embedding model changes.
+- The "because" notes use the person's undamped weights (`reasons=` on `scoring.rank`), so a
+  Spider-Man pick is explained by the Spider-Man films they rated. Scores are unchanged (tested).
+  `/recommend` also returns `series_seen` per pick. The SQL scorer's `because` list is still the
+  set of seeds that produced the score, so `just recommend` can differ from the site's notes.
+- Thin-profile notice under the hero below 15 liked films (stronger below 5); `/recommend` returns
+  `liked_films` and `rated_films` (the thinnest member's, for a group).
+- Franchise shelves list every unseen film of the series. They used to hold only those in the top
+  300 of the ranking, so a series' weaker entries (Batman Forever, Rocky V) could go missing;
+  `/franchises` now ranks the shown series' films in a second, masked pass (scores unchanged) and
+  keeps up to 20 per series.
+- Settings page: theme, contrast (system / standard / high), text size to 150%, dyslexia-friendly
+  reading (Atkinson Hyperlegible, loaded only when on), reduce motion. Stored in `pp-settings`.
+- WCAG 2.2 AA fixes: text floor of 12px and rem units, control borders and bar colours at 3:1,
+  skip link, page titles, focus to the heading on navigation, scroll padding under the sticky bar,
+  one-tab-stop cards, labelled signal dots with distinct shapes, underlined links in prose,
+  labelled forms, `inert` for the stacked Streaming cards, reflowing Streaming card on phones.
+- Display scale (`--z`) now depends on window height as well as width, so a 3440x1440 ultrawide
+  gets the 1440p scale. Ads: both rails from 1680px, the right rail only from 1400px, a 728x90
+  leaderboard from 728px, a 300x250 in-feed slot below that; none on import, privacy, about or
+  settings. Network requirements are in the comment on `Ad` in `Shell.tsx`.
+
+Built 2026-11-20, after the pass above:
+
+- **Browse by genre, director, actor and decade.** `/recommend` takes `facets` (up to one each of `genre`,
+  `director`, `actor`, `era`, combined with AND) that become a mask applied after the z-scores,
+  exactly like `providers`, so a film scores the same on a genre page as on the main list (tested).
+  A page's first filter is its path and the rest its query string (`/browse/genre/Drama?era=1990`);
+  the page has removable filter chips and a "Narrow it down" panel. `/facets` lists genres and
+  decades with counts and `/people` searches directors and actors by name. Pages: `/browse` and
+  `/browse/:kind/:value`; genre chips, a film's year, director names and cast names all link in.
+  Limits: cast is the top ten billed per film (all the snapshot holds) and matched by name;
+  keywords are not browsable until `publish_snapshot.build` exports `BRIDGE_MEDIA_KEYWORD`; only
+  one filter per kind (no "either of two genres").
+- **Watch together.** `/together`: add up to five people by Letterboxd username or export; the
+  existing multi-member `/recommend` ranks by least-misery and each film shows every person's
+  match with the lowest one named. Their films live in this browser (`pp-group`) and are never
+  stored server-side; the Privacy page says so. Still only exercised against a synthetic second
+  member and one real diary, so the *quality* of group picks is unvalidated (decision 5b).
+
+Planned next:
+
+- **Accounts.** Local-first for launch. Optional accounts (sync across devices, group invites) are a
+  hosting and licensing decision; weigh against the consent and delete flow first.
 
 ### Where we are (2026-11-18)
 
@@ -627,9 +689,9 @@ only on a synthetic split of it.
     Until the S3 inbox has its IAM, `just user-ingest titles --local-inbox` reads the local inbox.
     First run: 5 titles (*Golden Boy*, *Last Night at the Alamo*, *Frogman*, *Evil Bong 2*,
     *Possibly in Michigan*), snapshot `d4c5aac7e90e` (23,752 titles).
-13. **Light-mode accent vs body text.** Vault 24 `#3F3327` has 10.1:1 contrast on the page, but only
-    1.31:1 against the body text, so the accent reads nearly as text in light mode. WCAG does not
-    require a gap; whether it is enough to look intentional is a judgement for the running app.
+13. **Light-mode accent vs body text.** The shipped light accent is `#8F5A0F` (5.25:1 on the page, 5.77:1 under white button text); the
+    Vault 24 `#3F3327` considered earlier was not used. WCAG does not require a gap between accent
+    and body text; whether it looks intentional is a judgement for the running app.
 14. **Letterboxd ratings instead of TMDB's: not available.** Letterboxd's API is by request only, its
     terms forbid scraping, and exports and RSS hold only the member's own ratings, not the community
     average. The quality prior stays on the Bayesian-shrunk TMDB rating unless API access is granted.

@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { Backdrop } from '../components/Backdrop'
-import { FilmLink } from '../components/FilmLink'
+import { FilmLink, PosterLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
-import { Shell } from '../components/Shell'
+import { Ad, Shell } from '../components/Shell'
 import { Stars } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
 import { ApiError, api } from '../lib/api'
+import { browsePath, decadeOf } from '../lib/browse'
 import { parseFilmId, prettyDate, runtimeLabel, tmdbWatchUrl } from '../lib/format'
 import { effectiveFilms, useProfile } from '../lib/profile'
 import type { ClosestFilm, FilmDetail, SimilarFilm } from '../lib/types'
@@ -15,9 +16,9 @@ function SimilarCard({ f }: { f: SimilarFilm }) {
   return (
     <figure className="fc m-0">
       <div className="pw">
-        <FilmLink id={f.tmdb_id} label={`${f.title} details`}>
+        <PosterLink id={f.tmdb_id}>
           <Poster id={f.tmdb_id} title={f.title} path={f.poster_path} />
-        </FilmLink>
+        </PosterLink>
       </div>
       <figcaption>
         <b>
@@ -79,9 +80,9 @@ function ClosestToYou({ id }: { id: number }) {
         {closest.map((c: ClosestFilm) => (
           <figure key={c.tmdb_id} className="fc m-0">
             <div className="pw">
-              <FilmLink id={c.tmdb_id} label={`${c.title} details`}>
+              <PosterLink id={c.tmdb_id}>
                 <Poster id={c.tmdb_id} title={c.title} path={c.poster_path} />
-              </FilmLink>
+              </PosterLink>
             </div>
             <figcaption>
               <b>
@@ -99,11 +100,10 @@ function ClosestToYou({ id }: { id: number }) {
 }
 
 function Header({ f }: { f: FilmDetail }) {
-  const meta = [f.year, runtimeLabel(f.runtime)].filter(Boolean)
   return (
     <section className="hero" aria-labelledby="film-title">
       <div className="lb">
-        <Backdrop path={f.backdrop_path} tag="ABOUT THIS FILM" />
+        <Backdrop path={f.backdrop_path} />
       </div>
       <div className="hero-body">
         <div className="pwrap">
@@ -114,17 +114,22 @@ function Header({ f }: { f: FilmDetail }) {
           <h1 id="film-title">{f.title}</h1>
           {f.original_title && <p className="m-0 text-muted">{f.original_title}</p>}
           <p className="meta m-0">
-            {meta.map((m) => (
-              <span key={String(m)}>{m}</span>
-            ))}
+            {f.year != null && (
+              <span>
+                <Link to={browsePath('era', decadeOf(f.year))} title={`More from the ${decadeOf(f.year)}s`}>
+                  {f.year}
+                </Link>
+              </span>
+            )}
+            {runtimeLabel(f.runtime) && <span>{runtimeLabel(f.runtime)}</span>}
             {f.tmdb_rating != null && <span>TMDB {f.tmdb_rating.toFixed(1)}</span>}
           </p>
           {f.genres.length > 0 && (
             <div className="chips mt-3">
               {f.genres.map((g) => (
-                <span key={g} className="chip">
+                <Link key={g} to={browsePath('genre', g)} className="chip">
                   {g}
-                </span>
+                </Link>
               ))}
             </div>
           )}
@@ -133,7 +138,12 @@ function Header({ f }: { f: FilmDetail }) {
           {f.directors.length > 0 && (
             <p className="m-0 mt-3">
               <span className="label">Directed by </span>
-              {f.directors.join(', ')}
+              {f.directors.map((d, i) => (
+                <span key={d}>
+                  {i > 0 && ', '}
+                  <Link to={browsePath('director', d)}>{d}</Link>
+                </span>
+              ))}
             </p>
           )}
           <div className="chips mt-4">
@@ -178,7 +188,9 @@ function Cast({ f }: { f: FilmDetail }) {
       <ul className="m-0 grid list-none gap-x-8 gap-y-2 p-0 sm:grid-cols-2">
         {f.cast.map((c, i) => (
           <li key={`${c.name}-${i}`}>
-            <b>{c.name}</b>
+            <b>
+              <Link to={browsePath('actor', c.name)}>{c.name}</Link>
+            </b>
             {c.character && <span className="text-muted"> as {c.character}</span>}
           </li>
         ))}
@@ -216,7 +228,7 @@ export function Film() {
 
   const notFound = id == null || (q.error instanceof ApiError && q.error.status === 404)
   return (
-    <Shell>
+    <Shell title={q.data?.title ?? 'Film'}>
       <div className="pt-6">
         {notFound && (
           <div className="mx-auto max-w-xl py-20 text-center">
@@ -231,12 +243,11 @@ export function Film() {
         {q.data && (
           <>
             <Header f={q.data} />
+            <Ad kind="leaderboard" />
             <ClosestToYou id={q.data.tmdb_id} />
+            <Ad kind="infeed" />
             <Cast f={q.data} />
             <Similar id={q.data.tmdb_id} />
-            <p className="pt-8 text-center text-sm text-muted">
-              Film data from TMDB. Streaming availability from JustWatch via TMDB, US only.
-            </p>
           </>
         )}
       </div>

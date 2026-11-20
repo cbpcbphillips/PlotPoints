@@ -49,21 +49,35 @@ export function Sig({ r }: { r: Result }) {
   )
 }
 
+// Each signal has its own shape as well as its colour, so they can be told apart without colour
+// (WCAG 1.4.1): match is a circle, novelty a diamond, the TMDB rating a square.
+const SHAPE: Record<string, CSSProperties> = {
+  coral: { borderRadius: '50%' },
+  mint: { borderRadius: 1, transform: 'rotate(45deg) scale(0.85)' },
+  sky: { borderRadius: 1 },
+}
+
 const dot = (color: string, strength: number): CSSProperties => ({
   background: `var(--${color})`,
   opacity: 0.25 + Math.min(Math.max(strength, 0), 1) * 0.75,
+  ...SHAPE[color],
 })
 
 /** The three signal values under a card, each dot's opacity showing how strong it is. */
 export function SignalRow({ r }: { r: Result }) {
-  const items: [string, string, number][] = [['coral', `${r.match}%`, r.match / 100]]
-  if (r.novelty != null) items.push(['mint', String(r.novelty), r.novelty / 100])
-  if (r.tmdb_rating != null) items.push(['sky', r.tmdb_rating.toFixed(1), r.tmdb_rating / 10])
+  const items: [string, string, string, number][] = [
+    ['coral', 'Match', `${r.match}%`, r.match / 100],
+  ]
+  if (r.novelty != null) items.push(['mint', 'Novelty', String(r.novelty), r.novelty / 100])
+  if (r.tmdb_rating != null) {
+    items.push(['sky', 'TMDB rating', r.tmdb_rating.toFixed(1), r.tmdb_rating / 10])
+  }
   return (
     <div className="dv">
-      {items.map(([color, text, strength]) => (
-        <span key={color}>
-          <i style={dot(color, strength)} />
+      {items.map(([color, name, text, strength]) => (
+        <span key={color} title={name}>
+          <i style={dot(color, strength)} aria-hidden="true" />
+          <span className="sr-only">{name} </span>
           {text}
         </span>
       ))}

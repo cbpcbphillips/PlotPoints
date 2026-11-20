@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { FilmLink } from '../components/FilmLink'
+import { FilmLink, PosterLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
-import { Shell } from '../components/Shell'
+import { Ad, Shell } from '../components/Shell'
 import { Gauge, Stars } from '../components/Signals'
 import { ErrorNote, Loading } from '../components/States'
 import { api } from '../lib/api'
@@ -74,9 +74,15 @@ function Tag({ e }: { e: Entry }) {
   if (e.best) return <span className="ptag best">BEST {e.match}%</span>
   if (!e.seen) return null
   return e.rating ? (
-    <span className="ptag rated">★ {e.rating}</span>
+    <span className="ptag rated">
+      <span aria-hidden="true">★</span>
+      <span className="sr-only">Rated </span>
+      {e.rating}
+    </span>
   ) : (
-    <span className="ptag seen">✓ SEEN</span>
+    <span className="ptag seen">
+      <span aria-hidden="true">✓</span> SEEN
+    </span>
   )
 }
 
@@ -119,14 +125,16 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
           </span>
         </div>
         <div>
-          <Poster id={best.tmdb_id} title={best.title} path={best.poster_path} />
+          <PosterLink id={best.tmdb_id}>
+            <Poster id={best.tmdb_id} title={best.title} path={best.poster_path} />
+          </PosterLink>
         </div>
         <div className="bm">
           <span className="eyebrow">Best match · unseen</span>
           <b>
             <FilmLink id={best.tmdb_id}>{best.title}</FilmLink>
           </b>
-          <span className="text-[13px] text-muted">
+          <span className="text-[0.8125rem] text-muted">
             {best.year}
             {best.tmdb_rating != null && ` · TMDB ${best.tmdb_rating.toFixed(1)}`}
           </span>
@@ -142,7 +150,9 @@ function Shelf({ f, show, order }: { f: FranchiseGroup; show: Show; order: Order
             <figure key={e.key} className={`fc m-0${e.best ? ' best' : ''}${e.seen ? ' seen' : ''}`}>
               <div className="pw">
                 <Tag e={e} />
-                <Poster id={e.id} title={e.title} path={e.poster} small />
+                <PosterLink id={e.id}>
+                  <Poster id={e.id} title={e.title} path={e.poster} small />
+                </PosterLink>
               </div>
               <figcaption>
                 <b>
@@ -201,11 +211,11 @@ function FranchisesFor({ profile }: { profile: Profile }) {
   })
 
   return (
-    <Shell>
+    <Shell title="Franchises">
       <section className="pagehead">
-        <p className="eyebrow m-0">Your top 5 franchises</p>
         <h1>Franchises</h1>
       </section>
+      <Ad kind="leaderboard" />
       {q.isPending && <Loading what="your franchises" />}
       {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
       {q.data && (
@@ -236,8 +246,11 @@ function FranchisesFor({ profile }: { profile: Profile }) {
               </button>
             ))}
           </div>
-          {q.data.franchises.map((f) => (
-            <Shelf key={f.franchise} f={f} show={show} order={order} />
+          {q.data.franchises.map((f, i) => (
+            <Fragment key={f.franchise}>
+              <Shelf f={f} show={show} order={order} />
+              {i === 0 && <Ad kind="infeed" />}
+            </Fragment>
           ))}
           {q.data.franchises.length === 0 && (
             <p className="empty">None of your top matches belong to a franchise yet.</p>
