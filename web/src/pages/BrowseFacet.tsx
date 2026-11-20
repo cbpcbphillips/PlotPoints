@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Fragment } from 'react'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { FilmCard } from '../components/FilmCard'
 import { PeopleSearch } from '../components/PeopleSearch'
 import { Ad, Shell } from '../components/Shell'
@@ -7,20 +8,24 @@ import { ErrorNote, Loading, PageTitle } from '../components/States'
 import { api } from '../lib/api'
 import {
   KIND_LABEL,
+  addValue,
   facetTitle,
   facetsFromUrl,
   facetsPath,
+  hasMode,
+  hasValue,
   parseFacetKind,
-  withFacet,
-  withoutKind,
+  removeValue,
+  setMode,
+  valueTitle,
 } from '../lib/browse'
 import { useProfile, type Profile } from '../lib/profile'
-import type { Facet } from '../lib/types'
+import type { Facet, FacetKind } from '../lib/types'
 import { useRecommendations } from './ForYou'
 
 /**
- * `/browse/:kind/:value` (plus `?era=1990` and so on for more filters): the films you have not
- * seen that match every filter, closest to your taste first.
+ * `/browse/:kind/:value` (plus more values and kinds in the query string): the films you have
+ * not seen that match every filter, closest to your taste first.
  */
 export function BrowseFacet() {
   const { profile } = useProfile()
@@ -32,93 +37,112 @@ export function BrowseFacet() {
   return <FacetResults profile={profile} facets={facetsFromUrl(kind, value, search)} />
 }
 
-/** The active filters, each one a link that takes it off. */
+/** The same page with this value switched on or off. */
+const toggled = (facets: Facet[], kind: FacetKind, value: string) =>
+  facetsPath(
+    hasValue(facets, kind, value)
+      ? removeValue(facets, kind, value)
+      : addValue(facets, kind, value),
+  )
+
+/** The active filters: each value a link that takes it off, and an all-of / any-of switch. */
 function ActiveFilters({ facets }: { facets: Facet[] }) {
   return (
-    <ul className="chips m-0 mt-3 list-none p-0" aria-label="Active filters">
-      {facets.map((f) => {
-        const name = facetTitle(f.kind, f.value)
-        return (
-          <li key={f.kind}>
-            <Link
-              to={facetsPath(withoutKind(facets, f.kind))}
-              className="chip sel"
-              aria-label={`${KIND_LABEL[f.kind]}: ${name}. Remove this filter`}
+    <ul className="m-0 mt-3 grid list-none gap-2 p-0" aria-label="Active filters">
+      {facets.map((f) => (
+        <li key={f.kind} className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted">{KIND_LABEL[f.kind]}:</span>
+          {f.values.map((v, i) => (
+            <Fragment key={v}>
+              {i > 0 && (
+                <span className="text-sm text-muted">
+                  {f.mode === 'any' || f.kind === 'era' ? 'or' : 'and'}
+                </span>
+              )}
+              <Link
+                to={facetsPath(removeValue(facets, f.kind, v))}
+                className="chip sel"
+                aria-label={`${KIND_LABEL[f.kind]}: ${valueTitle(f.kind, v)}. Remove this filter`}
+              >
+                {valueTitle(f.kind, v)} <span aria-hidden="true">&times;</span>
+              </Link>
+            </Fragment>
+          ))}
+          {hasMode(f) && (
+            <span
+              role="group"
+              aria-label={`How ${KIND_LABEL[f.kind].toLowerCase()} filters combine`}
             >
-              <span className="text-muted">{KIND_LABEL[f.kind]}:</span> {name}{' '}
-              <span aria-hidden="true">&times;</span>
-            </Link>
-          </li>
-        )
-      })}
+              <span className="mr-1.5 text-sm text-muted">Match</span>
+              {(['all', 'any'] as const).map((m) => (
+                <Link
+                  key={m}
+                  to={facetsPath(setMode(facets, f.kind, m))}
+                  className={`chip${f.mode === m ? ' sel' : ''} mr-1.5`}
+                  aria-current={f.mode === m ? 'true' : undefined}
+                >
+                  {m === 'all' ? 'all of them' : 'any of them'}
+                </Link>
+              ))}
+            </span>
+          )}
+        </li>
+      ))}
     </ul>
   )
 }
 
-/** Pick another genre or decade, or search for a director or actor, to narrow the list. */
+/** Toggle more genres or decades, or search for themes, directors and actors, to change the list. */
 function NarrowDown({ facets }: { facets: Facet[] }) {
-  const navigate = useNavigate()
   const lists = useQuery({ queryKey: ['facets'], queryFn: api.facets, staleTime: Infinity })
-  const current = (kind: Facet['kind']) => facets.find((f) => f.kind === kind)?.value ?? ''
-  const pick = (kind: Facet['kind'], value: string) =>
-    navigate(facetsPath(value ? withFacet(facets, { kind, value }) : withoutKind(facets, kind)))
-  const selectClass =
-    'mt-1 min-h-11 w-full rounded-[10px] border-[1.5px] border-field bg-bg px-3 text-base text-ink'
+  const open = facets.reduce((n, f) => n + f.values.length, 0) < 3
+  const search = (kind: 'keyword' | 'director' | 'actor', label: string) => (
+    <PeopleSearch
+      kind={kind}
+      label={label}
+      headingLevel={3}
+      className="mt-5"
+      hrefFor={(n) => toggled(facets, kind, n)}
+      isSelected={(n) => hasValue(facets, kind, n)}
+    />
+  )
   return (
-    <details className="panel mt-4" open={facets.length < 2}>
-      <summary className="cursor-pointer text-lg font-bold">Narrow it down</summary>
-      <div className="mt-3 grid gap-4 sm:max-w-xl sm:grid-cols-2">
-        <div>
-          <label htmlFor="nd-genre" className="text-sm text-muted">
-            Genre
-          </label>
-          <select
-            id="nd-genre"
-            className={selectClass}
-            value={current('genre')}
-            onChange={(e) => pick('genre', e.target.value)}
+    <details className="panel mt-4" open={open}>
+      <summary className="cursor-pointer text-lg font-bold">Change the filters</summary>
+      <p className="m-0 mt-2 max-w-[62ch] text-sm text-muted">
+        Pick more than one genre, decade, theme, director or actor. With two or more of the same
+        kind, choose whether a film must match all of them (Romance and Comedy) or any of them
+        (Drama or Thriller).
+      </p>
+      <h3 className="m-0 mt-4 text-lg font-bold">Genre</h3>
+      <div className="chips mt-2">
+        {lists.data?.genres.map((g) => (
+          <Link
+            key={g.name}
+            to={toggled(facets, 'genre', g.name)}
+            className={`chip${hasValue(facets, 'genre', g.name) ? ' sel' : ''}`}
+            aria-current={hasValue(facets, 'genre', g.name) ? 'true' : undefined}
           >
-            <option value="">Any genre</option>
-            {lists.data?.genres.map((g) => (
-              <option key={g.name} value={g.name}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="nd-era" className="text-sm text-muted">
-            Decade
-          </label>
-          <select
-            id="nd-era"
-            className={selectClass}
-            value={current('era') ? String(Math.floor(parseInt(current('era'), 10) / 10) * 10) : ''}
-            onChange={(e) => pick('era', e.target.value)}
-          >
-            <option value="">Any decade</option>
-            {lists.data?.decades.map((d) => (
-              <option key={d.decade} value={d.decade}>
-                {d.decade}s
-              </option>
-            ))}
-          </select>
-        </div>
+            {g.name}
+          </Link>
+        ))}
       </div>
-      <PeopleSearch
-        kind="director"
-        label="Director"
-        headingLevel={3}
-        className="mt-5"
-        hrefFor={(n) => facetsPath(withFacet(facets, { kind: 'director', value: n }))}
-      />
-      <PeopleSearch
-        kind="actor"
-        label="Actor"
-        headingLevel={3}
-        className="mt-5"
-        hrefFor={(n) => facetsPath(withFacet(facets, { kind: 'actor', value: n }))}
-      />
+      <h3 className="m-0 mt-5 text-lg font-bold">Decade</h3>
+      <div className="chips mt-2">
+        {lists.data?.decades.map((d) => (
+          <Link
+            key={d.decade}
+            to={toggled(facets, 'era', String(d.decade))}
+            className={`chip${hasValue(facets, 'era', String(d.decade)) ? ' sel' : ''}`}
+            aria-current={hasValue(facets, 'era', String(d.decade)) ? 'true' : undefined}
+          >
+            {d.decade}s
+          </Link>
+        ))}
+      </div>
+      {search('keyword', 'Theme')}
+      {search('director', 'Director')}
+      {search('actor', 'Actor')}
     </details>
   )
 }
@@ -127,7 +151,7 @@ function FacetResults({ profile, facets }: { profile: Profile; facets: Facet[] }
   const q = useRecommendations(profile, [], true, 30, facets)
   const first = q.data?.pages[0]
   const named = first?.facet?.facets ?? facets
-  const name = named.map((f) => facetTitle(f.kind, f.value)).join(' · ')
+  const name = named.map(facetTitle).join(' · ')
   const results = q.data?.pages.flatMap((p) => p.results) ?? []
   const total = first?.facet?.total
 
@@ -143,15 +167,16 @@ function FacetResults({ profile, facets }: { profile: Profile; facets: Facet[] }
             ? 'No films in the catalog match all of these.'
             : `${total.toLocaleString()} ${total === 1 ? 'film matches' : 'films match'} in the catalog. These are the ones you have not seen, closest to your taste first.`}
       </PageTitle>
-      <ActiveFilters facets={named} />
-      <NarrowDown facets={named} />
+      <ActiveFilters facets={facets} />
+      <NarrowDown facets={facets} />
       <Ad kind="leaderboard" />
 
       {q.isPending && <Loading what={`${name} films`} />}
       {q.isError && <ErrorNote error={q.error} retry={() => q.refetch()} />}
       {first && total === 0 && (
         <p className="empty mt-4" role="status">
-          Nothing is in all of those at once. Take one filter off, above, to widen it.
+          Nothing is in all of those at once. Take a filter off, or switch a pair to &ldquo;any of
+          them&rdquo;, to widen it.
         </p>
       )}
       {first && total !== 0 && results.length === 0 && (

@@ -96,9 +96,10 @@ actually resemble it.
   floor), then compared with the *user's own* standard (the weighted rating of what they like):
   `min(1, q / anchor)^2`. A discount, never a boost or a filter; someone who loves schlock isn't
   denied it by a global bar.
-- **Group mode.** Each member scored independently, combined per title with **least-misery** (the
-  minimum), and anything *any* member has watched is excluded. Two identical members reproduce the
-  single-user ranking exactly.
+- **Group mode.** Each member is scored independently and anything *any* member has watched is
+  excluded. `just recommend` combines members per title with **least-misery** (the minimum). The
+  API's group list (since 2026-11-20) takes turns instead (`scoring.group_rotation`; see "Where we
+  are"). Two identical members reproduce the single-user ranking exactly in both.
 - **Explanations** (`because: [...]`) are the top-3 liked films behind each result — a by-product of
   the scoring, and what a frontend card needs.
 
@@ -179,7 +180,7 @@ pool makes the rate limit hold across everything Airflow schedules.
   - *7b, API.* [../api/](../api/) (FastAPI) + [../src/scoring.py](../src/scoring.py), the numpy
     port of the SQL scorer. **Equivalence verified against live Snowflake**: same top-50 in the same
     order, max score difference 0.0002 (float16), single user, dislike-penalty off, and a group.
-    ~40 ms per request, 225 MB resident in the Docker image. Endpoints: `/recommend` (with provider
+    ~40 ms per request; 225 MB resident in the Docker image at 23.7k titles, ~375 MB (measured) at 28.5k titles with film-page text and keywords. Endpoints: `/recommend` (with provider
     filter inside the ranking, plus each title's overall rank), `/franchises`, `/import/letterboxd`,
     `/match` (title+year -> TMDB id, flagging ambiguity), `/consent`, `/delete`, `/meta`.
   - *7c, inbox.* [../src/user_ingest.py](../src/user_ingest.py) and the `user_ingest` DAG land the
@@ -190,19 +191,6 @@ pool makes the rate limit hold across everything Airflow schedules.
   Tailwind v4, 138 KB gzipped. Import (export zip/CSVs parsed in the browser, or a username), For
   You, Franchises, Streaming, Import (returning), About, Privacy/deletion. Desktop, tablet (hero and
   grid) and phone layouts verified in a browser at 1440, 820 and 402 px; light and dark.
-
-### Still to do for Phases 7-8
-
-1. **AWS (needs the console):** a new IAM user for the API with `s3:PutObject` on `inbox/*` only, and
-   `s3:DeleteObject` on `inbox/*` for the pipeline uploader. Then run the inbox round trip for real
-   (consent -> `just user-ingest` -> delete) and set `PLOTPOINTS_INBOX=s3` on the API.
-2. **Deploy:** choose the API host (decision 8: Cloud Run or Render), host `web/dist` statically, set
-   `VITE_API_URL` and `PLOTPOINTS_CORS_ORIGINS`.
-3. **TMDB logo** (their brand asset, not in the repo) next to the disclaimer on the About page;
-   currently text only. Required for a public site.
-4. **Posters. DONE 2026-11-19.** Posters and hero backdrops load from TMDB's image CDN, over the
-   title-on-colour placeholder (which stays as the fallback). They carry the same attribution
-   requirement as the data, so item 3 matters more now.
 
 ### Phase 9 — Movie detail page (BUILT 2026-11-19; browser pass and a Docker run pending)
 
@@ -257,130 +245,179 @@ the host. Also changed: `api/app.py` now attaches a handler to its logger, becau
 configures only its own loggers and the access log would otherwise have gone nowhere; and
 `web/vite.config.ts` reads `PLOTPOINTS_API_PROXY` so a second API on another port can be used.
 
-### Road to deploy (checklist, 2026-11-19)
+## Where we are (2026-11-20)
 
-In rough order; each is described elsewhere in this file, gathered here so there is one list. The
-commands are in [deploy.md](deploy.md) (written, not yet run).
+Phases 0-9 are built and run locally end to end. **Nothing is deployed.** The app is feature-complete
+for a first launch to friends; what remains is hosting, AWS permissions and a handful of files only
+Carson can supply (see "Road to deploy").
 
-1. [x] Choose the redesign direction from `docs/mockups/` and port it. DONE 2026-11-19.
-2. [x] Build the movie detail page (Phase 9). Built; browser pass pending.
-3. [ ] Settle TMDB licensing before ads (see "Licensing conflict"); add the TMDB logo to About and
-       the detail page; keep the JustWatch attribution and "as of" label.
-4. [ ] AWS: inbox IAM users, then one real consent -> `user-ingest` -> delete round trip;
-       `PLOTPOINTS_INBOX=s3`.
-5. [x] Verify the Letterboxd export import on a real zip in the browser. DONE 2026-11-19.
-6. [ ] Pick the API host (Cloud Run or Render), deploy the Docker image, host `web/dist`, set
-       `VITE_API_URL` and `PLOTPOINTS_CORS_ORIGINS`.
-7. [x] API request logging and import counters (decision 15, step 4). DONE 2026-11-19: one line per
-       request (method, route template, status, ms), a snapshot line at start-up, a counts-only
-       line per `/match`, and the wanted-title write now warns instead of failing silently. A test
-       asserts no title or id appears in the logs. Counters beyond the per-import line were not
-       added.
-8. [ ] Ads, only after 3 and a deployed domain exist.
-9. [x] Pre-deploy app pass, 2026-11-20 (below). Settings page, accessibility and responsive fixes,
-       placement of the ad slots; features listed under "Planned next" are not built.
+**The product, as it runs today**
 
-#### Pre-deploy app pass (2026-11-20)
+- **For you:** the top pick with the three films that explain it, the thin-profile warning, a
+  "Step outside your comfort zone" pick (below), "The films shaping your picks" (the twelve liked
+  films that pull hardest on the top 50, with how many picks each is behind), then other
+  recommendations and a "Branch out" row.
+- **Browse:** genre, theme (TMDB keyword), director, billed actor and decade, several values per
+  kind combined all-of or any-of, with removable filter chips. Every list is still ranked by the
+  person's taste and shows only films they have not seen.
+- **Watch together:** up to six people (others added by username or export, kept in the browser
+  only). The list is built by taking turns (below), and each film shows how high it ranks for each
+  person.
+- **Franchises:** each shelf lists every unseen film of the series. **Streaming:** the best matches
+  on the services you pick. **Film pages:** details, themes, cast, closest films you rated.
+- **Settings:** theme, high contrast, text size to 150%, dyslexia-friendly reading, reduced motion.
+  WCAG 2.2 AA fixes throughout, checked from 375 to 3840 px wide in light, dark and high contrast.
+- **Switches:** `VITE_ADS` (ad slots, default off), `VITE_FEEDBACK_URL` (footer link, default
+  hidden). `web/public/tmdb.svg` (TMDB's logo) is picked up if present.
 
-Done, all verified in the running app at 375, 768, 1024, 1366, 1440, 1680, 1920, 2560, 3440 and 3840
-wide, in light, dark and high contrast (text contrast swept in all four combinations, no failures):
+**Decisions made on 2026-11-20 and why**
 
-- Removed the hero captions ("NOW SHOWING", "nearest point in taste space"), the Streaming and
-  Franchises eyebrows and the film-page credit line. TMDB attribution stays on About; the
-  "via JustWatch" note stays beside the provider chips.
-- Every poster links to its film page, and each card is one tab stop (the poster link is out of the
-  tab order, the title link is the stop).
-- "Another side of your taste" replaces the franchise-diversity "Beyond" panel: `scoring.beyond_pick`
-  picks the best-ranked film in the far half of the pool from the top pick whose reasons share no
-  film or franchise with it and which has at least two close rated films behind it. Falls back to
-  one shared reason, then to nothing. `BEYOND_ANCHOR_COSINE = 0.45` is about the median reason
-  cosine on `voyage-multilingual-2`: a measured starting point, not a fitted one. Re-check it if
-  the embedding model changes.
-- The "because" notes use the person's undamped weights (`reasons=` on `scoring.rank`), so a
-  Spider-Man pick is explained by the Spider-Man films they rated. Scores are unchanged (tested).
-  `/recommend` also returns `series_seen` per pick. The SQL scorer's `because` list is still the
-  set of seeds that produced the score, so `just recommend` can differ from the site's notes.
-- Thin-profile notice under the hero below 15 liked films (stronger below 5); `/recommend` returns
-  `liked_films` and `rated_films` (the thinnest member's, for a group).
-- Franchise shelves list every unseen film of the series. They used to hold only those in the top
-  300 of the ranking, so a series' weaker entries (Batman Forever, Rocky V) could go missing;
-  `/franchises` now ranks the shown series' films in a second, masked pass (scores unchanged) and
-  keeps up to 20 per series.
-- Settings page: theme, contrast (system / standard / high), text size to 150%, dyslexia-friendly
-  reading (Atkinson Hyperlegible, loaded only when on), reduce motion. Stored in `pp-settings`.
-- WCAG 2.2 AA fixes: text floor of 12px and rem units, control borders and bar colours at 3:1,
-  skip link, page titles, focus to the heading on navigation, scroll padding under the sticky bar,
-  one-tab-stop cards, labelled signal dots with distinct shapes, underlined links in prose,
-  labelled forms, `inert` for the stacked Streaming cards, reflowing Streaming card on phones.
-- Display scale (`--z`) now depends on window height as well as width, so a 3440x1440 ultrawide
-  gets the 1440p scale. Ads: both rails from 1680px, the right rail only from 1400px, a 728x90
-  leaderboard from 728px, a 300x250 in-feed slot below that; none on import, privacy, about or
-  settings. Network requirements are in the comment on `Ad` in `Shell.tsx`.
+- **Comfort-zone pick** (decision 5c, now built): `scoring.wildcard_pick`. It qualifies when a film
+  scores in the top 15% of all candidates (a real signal), has 1,500+ votes and a TMDB rating of
+  7.2+, and none of its genres is more than 5% of what the person likes (widened to 8, 12, 20 and
+  30% only if nothing qualifies); the best score wins. For a group the comfort zone is the group's.
+  The reason states only what is true: how few liked films are in that genre, that it is well
+  rated, and how high it scores. Thresholds are reasoned defaults, not tuned.
+- **"Another side of your taste" was removed.** It picked a film whose reasons did not overlap the
+  top pick's, which in practice was just the second-best different film and competed with the
+  comfort-zone card. That film now appears in "Other recommendations" like any other.
+- **Group lists now take turns** (`scoring.group_rotation`). Least-misery (rank by the least-keen
+  member's score) was validated as safe, but in use it returned films nobody wanted to watch.
+  Rotation: each member in turn gets their highest-scoring film among those every member has in the
+  top 5% of their own ranking, widening to 10, 20 and 30% only when a turn finds nothing; one film
+  per series; the thinnest history goes first. The SQL scorer (`just recommend`) still uses
+  least-misery.
+- **Consent is on by default and anonymous.** The "keep my ratings" box on import is pre-ticked,
+  and what is kept is only a TMDB id, rating and rewatch flag per film: no Letterboxd username is
+  sent. A pre-ticked box is not valid consent under the GDPR (the EU court's 2019 Planet49 ruling),
+  so **revisit before any EU-facing or public launch.** This is not legal advice.
 
-Built 2026-11-20, after the pass above:
+**Evidence for group picks** (`data/reports/group_validate.py`, `group_rotation_eval.py`; local,
+they read other people's exports). Four real histories, only one of them large (301 films matched;
+the others have 9, 47 and 17), so this is a sanity check, not a study.
 
-- **Browse by genre, director, actor and decade.** `/recommend` takes `facets` (up to one each of `genre`,
-  `director`, `actor`, `era`, combined with AND) that become a mask applied after the z-scores,
-  exactly like `providers`, so a film scores the same on a genre page as on the main list (tested).
-  A page's first filter is its path and the rest its query string (`/browse/genre/Drama?era=1990`);
-  the page has removable filter chips and a "Narrow it down" panel. `/facets` lists genres and
-  decades with counts and `/people` searches directors and actors by name. Pages: `/browse` and
-  `/browse/:kind/:value`; genre chips, a film's year, director names and cast names all link in.
-  Limits: cast is the top ten billed per film (all the snapshot holds) and matched by name;
-  keywords are not browsable until `publish_snapshot.build` exports `BRIDGE_MEDIA_KEYWORD`; only
-  one filter per kind (no "either of two genres").
-- **Watch together.** `/together`: add up to five people by Letterboxd username or export; the
-  existing multi-member `/recommend` ranks by least-misery and each film shows every person's
-  match with the lowest one named. Their films live in this browser (`pp-group`) and are never
-  stored server-side; the Privacy page says so. Still only exercised against a synthetic second
-  member and one real diary, so the *quality* of group picks is unvalidated (decision 5b).
+- Least-misery: no group list ever held a film anyone had seen; each member's group picks sat in
+  their own top 0.1-4.3% (popular films: 8-40%; another person's list: 0.5-82%); it protects the
+  worst-off member better than a plain average.
+- Rotation with a 5/10/20/30% fit ladder against least-misery, 20 picks per group: for the mismatched
+  pairs the worst member's median percentile improved in every case (2.3% to 0.9%, 3.2% to 1.6%,
+  1.8% to 0.8%, and 4.3% to 2.9% for all four) and top-5% coverage stayed at 100% for pairs, while
+  the share of picks in members' own top 1% was about the same overall (57.6% vs 59.6%; better for
+  mismatched groups, worse for aligned ones). Lists read as more varied and better known (higher
+  median votes; no repeated series). The decisive test is Carson running his own real group.
+- A hold-out on the one large diary (hide 25% of liked films): hidden films land at the 8th
+  percentile solo and the 22nd as part of a group (random: 50th), while a plain "most-voted first"
+  baseline lands at the 4th. That is expected (people mostly watch popular films) and is not a
+  reason to rank by popularity, but it is the number to watch if scoring changes again.
 
-Planned next:
+**Data.** Snapshot `5b07b4a5e390`: 28,555 titles, 175 provider groups, `voyage-multilingual-2`
+embeddings, TMDB keywords on 5+ films (about 7,500 themes; credit-stinger tags hidden), cast,
+directors and film-page text. (The 2026-11-16 `catalog_ingest` run loaded 23,747 titles in 2h33m;
+the catalog has grown since.) The API image built from it uses about 375 MB of memory, so budget a
+host with at least 1 GB.
 
-- **Accounts.** Local-first for launch. Optional accounts (sync across devices, group invites) are a
-  hosting and licensing decision; weigh against the consent and delete flow first.
+**Quality gates.** 161 Python tests (`just test`), 46 frontend tests (`cd web && npm test`), ruff,
+`npm run build`, and the numpy-vs-SQL equivalence test (`just test -m snowflake`, hits Snowflake).
 
-### Where we are (2026-11-18)
+**Still open, by choice.** TV titles, taste clusters, accounts, keyword combinations beyond one filter
+per kind, the commercial licence and ads (all after the friends launch).
 
-Phases 0-8 are built and run locally end to end; **nothing is deployed**. The stage is *Phase 9:
-redesign, posters and monetisation, then deploy*.
+### Road to deploy
 
-- **UI redesign: done** (2026-11-19). The six directions in `docs/mockups/` were the candidates; one
-  was chosen and ported.
-- **Ad rails (placeholder).** `Shell.tsx` reserves a 160x600 sticky slot either side of the 1200px
-  column, shown only at >=1600px so narrower screens never reflow. Each holds a "please disable your
-  adblocker so we can keep PlotPoints free for all" card standing in for the ad tag. No network is
-  chosen. Open questions: pick one (AdSense needs an approved, deployed domain, so this cannot be
-  finished before deploy), mobile placement (rails vanish below 1600px, so phones and laptops see no
-  ads and earn nothing), and real adblock detection instead of always showing the card.
-- **Posters (done 2026-11-19, no re-enrich).** The earlier note here assumed US-language posters
-  needed an `images` append and a ~2.5 h re-enrich. Wrong: enrich sends no `language`, so TMDB
-  answers in its en-US default and `poster_path` is already its preferred English poster (8 of 8
-  non-English films spot-checked: Parasite, Drive My Car, Amélie, Spirited Away, Pan's Labyrinth,
-  Oldboy, Cinema Paradiso, The Handmaiden). `backdrop_path` was in RAW and `DIM_MEDIA` all along and
-  only had to be exported: snapshot `d4c5aac7e90e` carries 23,739 posters and 23,716 backdrops.
-  TMDB's attribution requirement applies to the images.
-- **Licensing conflict to resolve before ads.** Decision 8 notes TMDB's free tier is non-commercial
-  and a project whose primary purpose is revenue needs a license. Ads put PlotPoints on the wrong
-  side of that; get the commercial terms (or an alternative image/metadata source) settled before
-  any ad network goes live.
-- **Still outstanding** from the list above: IAM changes and a real inbox round trip, host choice,
-  and the TMDB logo. The export import is verified on a real Letterboxd zip.
+The strategy is two steps. **Step 1 is a free, non-commercial passion-project launch for friends**,
+spread by word of mouth, to gather a real audience. **Step 2 is the commercial push**: the demand
+from step 1 is what gets better advertisers on board and what justifies the cost of a TMDB
+licence. Nothing in step 1 is commercial (no ads, nothing sold), so TMDB's free terms cover it.
 
-### Where the data actually stands
+#### Step 1: free launch for friends
 
-The catalog is **23,747 titles** (23,746 from the 2026-11-16 `catalog_ingest` run, floor 100, plus one
-diary-only film), spanning **1900-2026**, all embedded: `mart_embedding_coverage` reports coverage
-1.0000 with 0 missing and 0 stale, the new batch has a match rate of 1.0, and under 0.4% of titles
-lack any key field (0.07% no overview, 0.31% no cast). The fetch returned 23,746 against a
-sampling-based estimate of 23,794 (see the vote-floor decision below).
+Done in code (2026-11-20): ads off by default (`VITE_ADS`), TMDB credit and JustWatch note in the
+footer and on About, an optional TMDB logo slot (`web/public/tmdb.svg`), an optional "Send feedback"
+link (`VITE_FEEDBACK_URL`), link-preview tags, a phone navigation with a "More" menu, a "Waking up
+the server" message, consent on by default and anonymous, a Privacy "Visit counts" paragraph that
+appears with `VITE_ANALYTICS=true`, `just test-inbox` to prove the AWS key's permissions, and the
+IAM policy files in `docs/iam/`.
 
-Run economics, measured: fetch ~8 min, enrich ~2.35 h at 2.69 titles/s (the Sept trial's 1000 titles
-were reused through resume), `transform` 1.5 min, **2h33m end to end**. Only 14,952 movies have 200+
-votes, so the catalog's size is set by the floor, not by `--target`.
+Decided: **Cloud Run** (scale to zero, 1 GB, at most 3 instances, a $5 budget alert) for the API;
+**Cloudflare Pages** for the frontend; Cloudflare Web Analytics for visits; the S3 inbox for
+consented imports; a monthly snapshot refresh by hand. The step-by-step runbook, with the exact
+commands, is [deploy.md](deploy.md); the AWS steps are `external_setup.md` section 5b.
 
-Still a **single-user** dataset: one Letterboxd diary (`VetOW`, 17 entries). Group mode is verified
-only on a synthetic split of it.
+Carson's list, in order (consoles, accounts and files only he can provide):
+
+1. [ ] **AWS inbox**: update the uploader policy, create `plotpoints-api-inbox` (put-only), run
+       `just test-inbox --write` until every line passes, then one real consent -> `user-ingest`
+       -> delete round trip. Optional S3 lifecycle rule. Do this before inviting anyone.
+2. [ ] **Accounts**: Google Cloud project with billing (and the $5 budget alert), Cloudflare, and
+       the domain (about $12-15 a year; at Cloudflare Registrar it is sold at cost).
+3. [ ] **TMDB logo**: download from TMDB's brand assets, save as `web/public/tmdb.svg`.
+4. [ ] **Deploy the API** (deploy.md section 3), then **publish the frontend** (section 4) with
+       `VITE_API_URL`, optional `VITE_FEEDBACK_URL`, and later `VITE_ANALYTICS=true`.
+5. [ ] **Smoke checklist** (section 6), including a consent import and deletion on the live site.
+6. [ ] **Invite friends** and start the weekly routine (section 7): `just user-ingest`, a look at
+       the budget alert; monthly snapshot refresh.
+7. [ ] `just airflow-restart` so the Airflow image picks up the `src/` changes (not needed for the
+       API).
+8. [ ] Optional: a 1200x630 preview image and `og:image` / `twitter:image` tags.
+
+Measuring demand (what step 2 rests on): Cloudflare Analytics gives visits, countries and devices.
+The API log gives the rest: since 2026-11-20 it writes anonymous, count-only event lines (a list for
+one or several people, which filter kinds, a bucketed history size, imports, kept copies, deletions;
+`api/events.py`, never a title, id, name, username, token or address, with tests that check it) and
+`just usage` turns a log into daily numbers (`src/usage_report.py`). It cannot count returning
+people, since nothing in the log could tell them apart; "a few hundred monthly users who come back"
+has to be read from Cloudflare's visit numbers, not from the log.
+
+#### Step 2: commercial push (after the audience is proven)
+
+Gates, in order:
+
+1. **Demand shown:** repeat visits and real use of the features, not just first visits. Decide the
+   bar before looking at the numbers (for example a few hundred monthly users, a healthy share
+   returning within 30 days, and a meaningful share using group or browse). These are the numbers
+   that get better advertisers on board and justify the licence.
+2. **TMDB commercial licence.** Ads make PlotPoints commercial, and TMDB's [terms](https://themoviedb.org:443/api-terms-of-use)
+   require a written agreement for that. A figure of about $149 a month appears only in
+   third-party sources and is unconfirmed: ask `sales@themoviedb.org` for the real price when the
+   demand numbers are in, so the licence cost is weighed against real traffic.
+3. **Ads:** build with `VITE_ADS=true`; the slots and placement rules are in `components/Shell.tsx`.
+   AdSense has no traffic minimum but can reject app-like pages with little text; the better-paying
+   networks want traffic first (Mediavine's commonly quoted bar is 50k sessions a month; check
+   with the networks). Requirements to carry into any contract: no autoplay audio or video,
+   nothing moving for more than 5 seconds without a pause (WCAG 2.2.2), no focus traps.
+4. **Consent and privacy review** for EU visitors: opt-in consent instead of a pre-ticked box, and a
+   consent banner for ad cookies.
+5. **Alternatives if the licence is unaffordable:** stay non-commercial (donations only), or swap
+   the metadata and image source.
+
+**Costs and break-even** (estimates, 2026-11-20; the sources below disagree in places, so confirm
+with first-party pricing before budgeting).
+
+Per-user cost is close to zero: a visit is roughly half a vCPU-second of API work, so 100k monthly
+users would sit inside Cloud Run's free tier. Costs are fixed steps:
+
+| Item | Monthly |
+|---|---|
+| API host: Cloud Run (free at this scale) or [Render](https://render.com/pricing.md) Standard | $0-25 |
+| Frontend on a free static host (posters come from TMDB's CDN) | $0 |
+| Snowflake, if the pipeline runs locally: about 1-3 credits a month at [$2 a credit](https://www.getorchestra.io/guides/snowflake-pricing) | $2-6 |
+| S3, domain, odds and ends | $3-5 |
+| **Total without a TMDB fee** | **about $10-35** |
+| TMDB commercial licence (unconfirmed) | about $149 |
+| **Total with it** | **about $160-190** |
+
+Revenue per monthly user is page views times RPM (revenue per 1,000 page views), less ad blockers
+(entertainment sites report [about $2-12 RPM](https://eastondev.com/blog/en/posts/media/20260110-adsense-alternatives-comparison/)):
+low 5 views x $3 x 70% = $0.011; mid 9 x $6 x 70% = $0.038; high 12 x $10 x 80% = $0.096.
+
+Break-even, in monthly users (fixed cost / revenue per user):
+
+| | Low | Mid | High |
+|---|---|---|---|
+| Without the TMDB fee, about $25 | 2,400 | 660 | 260 |
+| With the TMDB fee, about $175 | 16,700 | 4,600 | 1,800 |
+
+The licence decides everything. Legal and privacy costs are not included.
 
 ## Decisions made
 
@@ -615,7 +652,7 @@ only on a synthetic split of it.
    *Inception* and *Avengers: Endgame* appear because the system cannot know they were seen long
    ago. This is the RSS-cap decision again, and it is the biggest limit on how good the output can
    get — a full-history CSV import would improve it more than any scoring change.
-5c. **A "step outside your comfort zone" pick (wanted: a real feature, not built).** Stated
+5c. **A "step outside your comfort zone" pick (BUILT 2026-11-20 as `scoring.wildcard_pick`; the original brief follows).** Stated
    requirement: offer the viewer *a good pick outside their typical niche that is still
    recommended from their taste profile*. It is a deliberate option, not a side effect of
    diversity, and it should be surfaced as its own recommendation (the 07 mock-ups put it beside

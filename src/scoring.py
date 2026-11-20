@@ -280,6 +280,81 @@ def _because(snap: Snapshot, row_idx: int, scored: dict, top_n: int) -> list[dic
     ]
 
 
+@dataclass
+class Scored:
+    """Every candidate scored for every member, before any ordering. Lets one scoring pass feed
+    the ranked list, the "another side" pick and the comfort-zone pick."""
+
+    snap: Snapshot
+    members: list[_Member]
+    cand: np.ndarray  # catalog rows that may be recommended
+    per_member: list[dict]
+    group: np.ndarray  # per candidate: the lowest member score (least misery)
+    top_n: int
+
+
+def score_candidates(
+    snap: Snapshot,
+    profiles: Profile,
+    *,
+    dislike_weight: float = DISLIKE_WEIGHT,
+    top_n: int = TOP_N,
+    quality_power: float = QUALITY_POWER,
+    min_runtime: int = MIN_RUNTIME_MINUTES,
+    min_votes: int = CANDIDATE_MIN_VOTES,
+    reasons: Profile | None = None,
+) -> Scored:
+    members = _split(profiles, reasons)
+    cand = _candidates(snap, profiles, min_runtime, min_votes)
+    q = quality_array(snap)
+    per_member = [
+        _member_scores(snap, cand, m, q, dislike_weight, top_n, quality_power) for m in members
+    ]
+    group = np.min(np.stack([p["score"] for p in per_member]), axis=0)
+    return Scored(snap, members, cand, per_member, group, top_n)
+
+
+def _row(sc: Scored, p: int, rank_no: int) -> dict:
+    """The result entry for the candidate at position `p` of `sc.cand`."""
+    snap = sc.snap
+    row = int(sc.cand[p])
+    details = []
+    for pm in sc.per_member:
+        because = _because(snap, row, pm, sc.top_n)
+        details.append(
+            {
+                "member": pm["member"].name,
+                "score": float(pm["score"][p]),
+                "relevance": float(pm["relevance"][p]),
+                "penalty": float(pm["penalty"][p]),
+                "quality_factor": float(pm["quality_factor"][p]),
+                "match": float(np.mean([b["cosine"] for b in because])),
+                "because": because,
+            }
+        )
+    return {
+        "rank": rank_no,
+        "index": row,
+        "media_key": snap.media_key[row],
+        "tmdb_id": int(snap.tmdb_id[row]),
+        "title": snap.title[row],
+        "year": int(snap.year[row]) or None,
+        "score": float(sc.group[p]),
+        # raw cosine, averaged over the films that explain it; the group's is its worst
+        "match": min(d["match"] for d in details),
+        "members": details,
+    }
+
+
+def rank_scored(sc: Scored, *, limit: int = 20, allow: np.ndarray | None = None) -> list[dict]:
+    """The best `limit` candidates, best first (score desc, then title like SQL)."""
+    keep = np.ones(len(sc.cand), dtype=bool) if allow is None else allow[sc.cand]
+    pos = np.flatnonzero(keep)
+    titles = np.asarray(sc.snap.title, dtype=object)[sc.cand[pos]]
+    order = pos[np.lexsort((titles, -sc.group[pos]))][:limit]
+    return [_row(sc, int(p), n) for n, p in enumerate(order, start=1)]
+
+
 def rank(
     snap: Snapshot,
     profiles: Profile,
@@ -302,51 +377,17 @@ def rank(
     AFTER the per-seed standardization, so a filter changes which titles compete, never what any
     title scores: restricting the pool first would shift every z-score.
     """
-    members = _split(profiles, reasons)
-    cand = _candidates(snap, profiles, min_runtime, min_votes)
-    q = quality_array(snap)
-    per_member = [
-        _member_scores(snap, cand, m, q, dislike_weight, top_n, quality_power) for m in members
-    ]
-    group = np.min(np.stack([p["score"] for p in per_member]), axis=0)
-
-    keep = np.ones(len(cand), dtype=bool) if allow is None else allow[cand]
-    pos = np.flatnonzero(keep)
-    titles = np.asarray(snap.title, dtype=object)[cand[pos]]
-    order = pos[np.lexsort((titles, -group[pos]))][:limit]  # score desc, then title like SQL
-
-    results = []
-    for rank_no, p in enumerate(order, start=1):
-        row = int(cand[p])
-        details = []
-        for pm in per_member:
-            because = _because(snap, row, pm, top_n)
-            details.append(
-                {
-                    "member": pm["member"].name,
-                    "score": float(pm["score"][p]),
-                    "relevance": float(pm["relevance"][p]),
-                    "penalty": float(pm["penalty"][p]),
-                    "quality_factor": float(pm["quality_factor"][p]),
-                    "match": float(np.mean([b["cosine"] for b in because])),
-                    "because": because,
-                }
-            )
-        results.append(
-            {
-                "rank": rank_no,
-                "index": row,
-                "media_key": snap.media_key[row],
-                "tmdb_id": int(snap.tmdb_id[row]),
-                "title": snap.title[row],
-                "year": int(snap.year[row]) or None,
-                "score": float(group[p]),
-                # raw cosine, averaged over the films that explain it; the group's is its worst
-                "match": min(d["match"] for d in details),
-                "members": details,
-            }
-        )
-    return results
+    sc = score_candidates(
+        snap,
+        profiles,
+        dislike_weight=dislike_weight,
+        top_n=top_n,
+        quality_power=quality_power,
+        min_runtime=min_runtime,
+        min_votes=min_votes,
+        reasons=reasons,
+    )
+    return rank_scored(sc, limit=limit, allow=allow)
 
 
 def diversify(
@@ -425,71 +466,178 @@ def diversify(
     return [pool[j] for j in picked]
 
 
-# "Another side of your taste": a pick from a different region of the person's taste than the top
-# pick, but still rooted in films they have seen. A reasoned default, not a fitted one.
-BEYOND_MIN_ANCHORS = 2  # close rated films needed: a cluster, not an outlier
-BEYOND_ANCHOR_COSINE = 0.45  # about the median "because" cosine on the current embedding model
+# A group list by turns. Least-misery (the lowest member's score) drifts to films nobody minds and
+# nobody loves; real groups pick by taking turns, each person offering a film they are keen on that
+# the others can live with. Each pick must sit inside every member's top slice of their own ranking,
+# starting tight and widening only when a turn finds nothing.
+ROTATION_FITS = (0.05, 0.10, 0.20, 0.30)
 
 
-def beyond_pick(
-    snap: Snapshot,
-    ranked: list[dict],
-    top: dict,
+def group_rotation(
+    sc: Scored,
+    n: int,
+    *,
+    fits: tuple[float, ...] = ROTATION_FITS,
+) -> list[dict]:
+    """`n` picks for a group, taking turns, in the order they are offered.
+
+    On each turn the member whose turn it is gets their highest-scoring film among those that every
+    member has in the top `fits[0]` of their own ranking; if none is left, the slice widens to
+    `fits[1]`, then `fits[2]`; past that the turn goes to the film with the best worst-case slice.
+    At most one film per franchise, so the list is not a series. The member whose history is
+    thinnest goes first (they would otherwise steer a least-misery list, so they lead a fair one).
+
+    Each entry is the usual result plus `picked_for` (whose turn) and `fit`: for every member, the
+    top percent of their own ranking the film sits in (1 = their very best). Stable: the first k
+    picks of a longer list are the same k, so a page can be asked for later.
+    """
+    snap, cand = sc.snap, sc.cand
+    total = len(cand)
+    if total == 0 or n <= 0:
+        return []
+    count = len(sc.per_member)
+    scores = [np.asarray(pm["score"], dtype=np.float64) for pm in sc.per_member]
+    # position in each member's own ranking, 0 = their favourite; ties broken by candidate order
+    pct = np.empty((count, total))
+    for i, sco in enumerate(scores):
+        order = np.argsort(-sco, kind="stable")
+        ranks = np.empty(total)
+        ranks[order] = np.arange(total)
+        pct[i] = ranks / total
+    worst = pct.max(axis=0)  # a film's fit is only as good as its least-keen member's slice
+
+    thin_first = sorted(range(count), key=lambda i: len(sc.members[i].liked_idx))
+    franchise = np.array([snap.franchise[int(c)] or "" for c in cand], dtype=object)
+    taken = np.zeros(total, dtype=bool)
+    picks: list[tuple[int, int]] = []  # (candidate position, member index whose turn it was)
+    turn = 0
+    while len(picks) < n:
+        who = thin_first[turn % count]
+        turn += 1
+        free = ~taken
+        chosen = None
+        for limit in fits:
+            ok = free & (worst <= limit)
+            if ok.any():
+                idx = np.flatnonzero(ok)
+                chosen = int(idx[np.argmax(scores[who][idx])])
+                break
+        if chosen is None:  # nothing within the widest slice: best worst-case, then their score
+            idx = np.flatnonzero(free)
+            if idx.size == 0:
+                break
+            chosen = int(idx[np.lexsort((-scores[who][idx], worst[idx]))[0]])
+        picks.append((chosen, who))
+        taken[chosen] = True
+        name = franchise[chosen]
+        if name:
+            taken |= franchise == name
+
+    out = []
+    for rank_no, (p, who) in enumerate(picks, start=1):
+        row = _row(sc, p, rank_no)
+        row["picked_for"] = sc.members[who].name
+        row["fit"] = [
+            {"member": sc.members[i].name, "top_percent": max(1, int(np.ceil(pct[i][p] * 100)))}
+            for i in range(count)
+        ]
+        out.append(row)
+    return out
+
+
+# "Step outside your comfort zone" (roadmap decision 5c): a well-rated film from a genre the person
+# rarely rates, that still scores well for them. It is picked from the full candidate list, not
+# the top few hundred, because by construction it is not near the top. Reasoned defaults, not
+# fitted; see docs/roadmap.md for how they were set against real diaries.
+WILDCARD_SIGNAL_TOP = 0.15  # must score in the top 15% of all candidates: a real taste signal
+WILDCARD_MIN_VOTES = 1500  # and be a film many people have rated, so its rating means something
+WILDCARD_MIN_RATING = 7.2  # TMDB rating: a good film, not just an unfamiliar one
+# A film is outside the comfort zone when its best-covered genre is a small share of what the
+# person likes. Tried in order, widening only if nothing qualifies (a very wide-ranging viewer).
+WILDCARD_SHARES = (0.05, 0.08, 0.12, 0.2, 0.3)
+
+
+def comfort_shares(sc: Scored) -> tuple[dict[str, float], dict[str, int], int]:
+    """How much of what each person likes sits in each genre, averaged over the group.
+
+    Returns (share per genre, liked films per genre, liked films in all). A share is the fraction
+    of a person's liked weight (rating minus 3, rewatch bonus; undamped) carried by films of that
+    genre, so Drama can be 0.6 and Western 0.01, and a film in three genres counts toward each.
+    Members count equally however many films they have rated.
+    """
+    snap = sc.snap
+    share: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    total = 0
+    for m in sc.members:
+        w_sum = float(m.reason_w.sum())
+        mine: dict[str, float] = {}
+        for row, w in zip(m.liked_idx, m.reason_w, strict=True):
+            total += 1
+            for g in snap.genres[int(row)]:
+                mine[g] = mine.get(g, 0.0) + float(w)
+                counts[g] = counts.get(g, 0) + 1
+        for g, v in mine.items():
+            share[g] = share.get(g, 0.0) + v / w_sum / len(sc.members)
+    return share, counts, total
+
+
+def wildcard_pick(
+    sc: Scored,
     *,
     exclude: list[int] | tuple[int, ...] = (),
-    min_anchors: int = BEYOND_MIN_ANCHORS,
-    anchor_cosine: float = BEYOND_ANCHOR_COSINE,
+    signal_top: float = WILDCARD_SIGNAL_TOP,
+    min_votes: int = WILDCARD_MIN_VOTES,
+    min_rating: float = WILDCARD_MIN_RATING,
 ) -> dict | None:
-    """The best-ranked film from a different corner of the person's taste than `top`.
+    """A good film outside the person's usual genres that still scores well for them.
 
-    A film qualifies when all of these hold:
-      * it is not the top pick, nor in the top pick's franchise or its reasons' franchises;
-      * it sits in the far half of the ranked pool from the top pick (cosine below the pool's
-        median to it), so it is a different region of the space, not a near neighbour;
-      * at least `min_anchors` of the liked films that explain it are close (cosine >=
-        `anchor_cosine`), so it belongs to a cluster of films the person has actually seen;
-      * its reasons overlap the top pick's reasons in no film (first pass) or in one (fallback).
+    Qualifies when it (1) is in the top `signal_top` of all candidates by score, so it carries a
+    real signal from the profile; (2) has at least `min_votes` votes and a TMDB rating of at least
+    `min_rating`; (3) has no genre that is more than a small share of what the person likes
+    (`WILDCARD_SHARES`, widened step by step if nothing qualifies). The best by score wins.
 
-    `ranked` is the ranked pool (best first) and `top` its first entry. Returns that entry, or
-    None when nothing qualifies, and the caller simply shows no such pick. Everything still comes
-    from the person's own ranking; this picks among it, it never invents.
+    Returns the usual result entry plus `outside`: the least-covered genre of the pick, how many
+    of the person's liked films are in it, and how high the pick scores overall, for an honest
+    "why" that does not claim the film is similar to what they rated. None if nothing qualifies.
     """
-    top_row = top["index"]
+    snap, cand, group = sc.snap, sc.cand, sc.group
+    if len(cand) == 0:
+        return None
+    share, counts, total = comfort_shares(sc)
+    floor = np.quantile(group, 1 - signal_top)
+    skip = {int(i) for i in exclude}
 
-    def reason_ids(r: dict) -> set[int]:
-        return {b["tmdb_id"] for m in r["members"] for b in m["because"]}
-
-    def franchise_of_id(tmdb_id: int) -> str | None:
-        i = snap.by_tmdb.get(("movie", tmdb_id))
-        return None if i is None else snap.franchise[i]
-
-    top_ids = reason_ids(top)
-    top_franchises = {snap.franchise[top_row]} | {franchise_of_id(i) for i in top_ids}
-    top_franchises.discard(None)
-
-    skip = {int(i) for i in exclude} | {top_row}
-    pool = [r for r in ranked if r["index"] not in skip]
+    rating = snap.rating[cand]
+    votes = snap.votes[cand]
+    ok = (group > max(floor, 0.0)) & (votes >= min_votes) & (rating >= min_rating)
+    pool = [int(p) for p in np.flatnonzero(ok) if int(cand[p]) not in skip]
     if not pool:
         return None
-    sims = snap.vectors[[r["index"] for r in pool]] @ snap.vectors[top_row]
-    far = float(np.median(sims))
 
-    for allowed_overlap in (0, 1):
-        for r, sim in zip(pool, sims, strict=True):
-            if sim >= far:
-                continue
-            if snap.franchise[r["index"]] in top_franchises:
-                continue
-            ids = reason_ids(r)
-            if len(ids & top_ids) > allowed_overlap:
-                continue
-            if any(franchise_of_id(i) in top_franchises for i in ids - top_ids):
-                continue
-            close = [b for m in r["members"] for b in m["because"] if b["cosine"] >= anchor_cosine]
-            if len({b["tmdb_id"] for b in close}) < min_anchors:
-                continue
-            return r
-    return None
+    def comfort(p: int) -> float:
+        gs = snap.genres[int(cand[p])]
+        return max((share.get(g, 0.0) for g in gs), default=1.0) if gs else 1.0
+
+    scored = [(p, comfort(p)) for p in pool]
+    for limit in WILDCARD_SHARES:
+        hits = [p for p, c in scored if c <= limit]
+        if hits:
+            best = min(hits, key=lambda p: (-group[p], snap.title[int(cand[p])]))
+            break
+    else:
+        return None
+
+    row = _row(sc, best, 0)
+    genres = snap.genres[row["index"]]
+    rare = min(genres, key=lambda g: share.get(g, 0.0)) if genres else None
+    row["outside"] = {
+        "genre": rare,
+        "liked_in_genre": counts.get(rare, 0) if rare else 0,
+        "liked_total": total,
+        "top_percent": max(1, round(100 * float((group > group[best]).sum()) / len(cand))),
+    }
+    return row
 
 
 def closest_rated(

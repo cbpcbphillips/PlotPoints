@@ -1,0 +1,16 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-unprocessed-import-files",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "inbox/imports/"},
+      "Expiration": {"Days": 45}
+    },
+    {
+      "ID": "expire-unprocessed-wanted-title-files",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "inbox/titles/"},
+      "Expiration": {"Days": 45}
+    }
+  ]
+}

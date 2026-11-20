@@ -22,15 +22,15 @@ export interface Bundle {
   films: { tmdb_id: number; title: string; year: number | null }[]
 }
 
-/** A film of the same series the person has already rated. */
-export interface SeriesFilm {
-  tmdb_id: number
-  media_key: string
-  title: string
-  year: number | null
-  rating: number | null
-  tmdb_rating: number | null
-  poster_path: string | null
+/** Why a comfort-zone pick is outside the person's usual taste (it makes no similarity claim). */
+export interface Outside {
+  /** The genre of the pick that the person rates least. */
+  genre: string | null
+  /** How many of the person's liked films are in that genre. */
+  liked_in_genre: number
+  liked_total: number
+  /** The pick scores within the top N percent of everything that could be suggested. */
+  top_percent: number
 }
 
 export interface Result {
@@ -55,8 +55,12 @@ export interface Result {
   overall_rank?: number | null
   /** Set when this row stands for a whole franchise: how many other films it folds in. */
   bundle?: Bundle | null
-  /** The films of this pick's series the person has already rated, oldest first. */
-  series_seen?: SeriesFilm[]
+  /** Only on the comfort-zone pick. */
+  outside?: Outside
+  /** Group lists only: whose turn it was when this film was picked. */
+  picked_for?: string
+  /** Group lists only: where the film sits in each person's own ranking (1 = their very best). */
+  fit?: { member: string; top_percent: number }[]
   members: { member: string; match: number; because: Because[] }[]
 }
 
@@ -68,16 +72,22 @@ export interface Enjoyed {
   year: number | null
   poster_path: string | null
   rating: number | null
-  /** Mean cosine to the top picks, whole percent. */
-  avg_match: number
+  /** In how many of the top `of` picks this film is one of the three named as the reason. */
+  behind: number
+  /** How many top picks were counted (up to 50). */
+  of: number
 }
 
-export type FacetKind = 'genre' | 'director' | 'actor' | 'era'
+export type FacetKind = 'genre' | 'keyword' | 'director' | 'actor' | 'era'
 
-/** Browse: restrict a ranking to one genre, director, billed actor or decade. */
+/** How several values of one kind combine: all of them (Romance and Comedy) or any (Drama or Thriller). */
+export type FacetMode = 'all' | 'any'
+
+/** Browse: restrict a ranking to some genres, themes, directors, billed actors or decades. */
 export interface Facet {
   kind: FacetKind
-  value: string
+  values: string[]
+  mode: FacetMode
 }
 
 /** What a set of filters resolved to: the catalog's spelling, and how many films match all. */
@@ -105,8 +115,8 @@ export interface RecommendResponse {
   enjoyed: Enjoyed[] | null
   /** A varied second row: from the person's ranking, spread away from the first page. */
   branch_out?: Result[] | null
-  /** A pick from another corner of the person's taste than the top pick; first page only. */
-  beyond?: Result | null
+  /** A well-rated film outside the person's usual genres that still scores for them. */
+  wildcard?: Result | null
   /** Set when the request asked for a facet. */
   facet?: FacetInfo | null
   has_more: boolean
@@ -139,6 +149,8 @@ export interface FilmDetail extends FilmCardData {
   tagline: string | null
   overview: string | null
   directors: string[]
+  /** TMDB themes, a dozen at most. */
+  keywords: string[]
   cast: { name: string; character: string | null }[]
   providers_as_of: string
 }

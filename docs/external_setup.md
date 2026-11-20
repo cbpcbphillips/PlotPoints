@@ -148,6 +148,63 @@ access key → "Application running outside AWS". Download the CSV, copy the two
 into `.env` as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, then delete the CSV —
 it's a plaintext copy of a live secret.
 
+## 5b. AWS — the API's inbox user (put-only) and the uploader's purge permission
+
+Needed before the hosted app takes consented imports (the consent box is on by default). Policy
+files are in [`iam/`](iam/): replace `BUCKET` with your bucket name when you paste them.
+
+**1. Update the uploader policy** (IAM → Policies → `plotpoints-uploader-policy` → Edit → JSON →
+paste [`iam/uploader-policy.json`](iam/uploader-policy.json) → Save as a new default version). The one
+addition is `s3:DeleteObject` on `inbox/*`, which `just user-ingest purge` and `just test-inbox` use
+to remove landed or probe files. No key rotation needed.
+
+**2. Create the API's own policy and user.**
+- IAM → Policies → Create policy → JSON → paste [`iam/api-inbox-policy.json`](iam/api-inbox-policy.json)
+  → name it `plotpoints-api-inbox-policy`. It allows `s3:PutObject` on `inbox/*` and nothing else:
+  no read, no list, no delete, nothing outside `inbox/`.
+- IAM → Users → Create user → `plotpoints-api-inbox` → **no console access** → attach that policy
+  directly → Security credentials → Create access key → "Application running outside AWS".
+- Keep the two values out of the repo. For the hosted API they go into the host's secret store as
+  `INBOX_AWS_ACCESS_KEY_ID` / `INBOX_AWS_SECRET_ACCESS_KEY` (see [deploy.md](deploy.md)). For the
+  check below, paste them into your local `.env` under those same names, and **delete the CSV**.
+
+**3. Prove the policy** (writes one tiny probe file, then removes it):
+
+```powershell
+just test-inbox --write
+```
+
+Expected: PASS for the credentials, the put into `inbox/`, the three denials (read, list, delete),
+the denied write outside `inbox/`, and the clean-up. A FAIL on a "denied" line means the key is more
+powerful than intended: fix the policy before going on.
+
+**4. Optional safety net: expire files nobody processed.** S3 → your bucket → Management →
+Lifecycle rules → Create rule using [`iam/inbox-lifecycle.json`](iam/inbox-lifecycle.json) (or the
+equivalent in the console: prefix `inbox/imports/` and `inbox/titles/`, expire after 45 days).
+Deletion requests (`inbox/deletions/`) are deliberately left out: they are tiny hashes, and one that
+expired before it was processed would leave someone's data in place.
+
+**5. Run the whole round trip once for real** (so deletion is proven, not assumed):
+
+```powershell
+$env:PLOTPOINTS_INBOX = "s3"; just api     # a second terminal: cd web; npm run dev
+```
+
+In development the API reads `INBOX_AWS_ACCESS_KEY_ID`, `INBOX_AWS_SECRET_ACCESS_KEY`,
+`AWS_S3_BUCKET` and `AWS_REGION` from the environment first and your local `.env` second (hosted,
+they come from the host's secrets). It never reads the uploader's `AWS_ACCESS_KEY_ID`. If one is
+missing it stops at start-up and names it.
+
+Import a small test history in the app with the consent box ticked, note the deletion token on the
+Privacy page, then:
+
+```powershell
+just user-ingest land      # the import appears in RAW.USER_IMPORTS ("Landed 1 import(s)")
+```
+
+On the Privacy page use "Delete with token", then `just user-ingest` (all steps): it removes the
+rows (`delete`) and the landed inbox files (`purge`). Check `RAW.USER_IMPORTS` is empty again.
+
 ## 6. AWS — IAM role for Snowflake (read-only, used by the storage integration)
 
 IAM → Policies → Create policy → JSON tab:

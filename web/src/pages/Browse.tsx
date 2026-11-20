@@ -48,6 +48,7 @@ export function Browse() {
         </div>
       </section>
 
+      <PeopleSearch kind="keyword" label="Themes" hrefFor={(n) => browsePath('keyword', n)} />
       <PeopleSearch kind="director" label="Directors" hrefFor={(n) => browsePath('director', n)} />
       <PeopleSearch kind="actor" label="Actors" hrefFor={(n) => browsePath('actor', n)} />
       <Ad kind="infeed" />

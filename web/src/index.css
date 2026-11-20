@@ -229,6 +229,13 @@ body::before {
   outline-offset: 3px;
   border-radius: 4px;
 }
+/* <main> is only ever focused by script, after a page change, so keyboard and screen-reader users
+   start at the new page. It is not a control, so it gets no ring (a box round the whole page read
+   as a glitch). The heading, or the first real control, shows the ring as usual. */
+#main:focus,
+#main:focus-visible {
+  outline: none;
+}
 
 @layer components {
   /* The page column. Ad rails stop at 300px, so on big screens the content takes the rest by
@@ -669,6 +676,14 @@ body::before {
       grid-template-columns: repeat(2, 1fr);
     }
   }
+  /* two navigations, one per screen size: all the tabs, and a phone one with a "More" menu */
+  .navlinks-wide {
+    display: flex;
+    gap: 2px;
+  }
+  .navlinks-narrow {
+    display: none;
+  }
   @media (max-width: 720px) {
     .bar {
       height: auto;
@@ -682,6 +697,48 @@ body::before {
       overflow-x: auto;
       white-space: nowrap;
     }
+    .navlinks-wide {
+      display: none;
+    }
+    .navlinks-narrow {
+      display: flex;
+      gap: 0;
+      overflow: visible;
+    }
+    .navlinks-narrow .navlink {
+      padding: 6px 5px;
+    }
+  }
+  .more {
+    position: relative;
+    margin-left: auto;
+  }
+  .more summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .more summary::-webkit-details-marker {
+    display: none;
+  }
+  .more summary::after {
+    content: ' \25BE';
+  }
+  .more .menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 30;
+    display: grid;
+    min-width: 9rem;
+    padding: 6px;
+    gap: 2px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .more .menu .navlink {
+    padding: 10px 12px;
   }
 
   /* hero (For you) */
@@ -1093,11 +1150,6 @@ body::before {
     background: var(--accent);
     border-color: var(--accent);
     color: var(--on);
-    padding-left: 12px;
-  }
-  .svc button[aria-pressed='true']::before {
-    content: '\2713';
-    font-weight: 700;
   }
   .empty {
     border: 1px dashed var(--line);

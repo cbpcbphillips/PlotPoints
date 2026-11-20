@@ -33,11 +33,23 @@ function RouteChange() {
       return
     }
     if (hash) return
-    const target = document.querySelector<HTMLElement>('main h1, main')
-    if (target) {
-      target.setAttribute('tabindex', '-1')
-      target.focus({ preventScroll: true })
+    // The heading may not exist yet (a page that loads its list first), so look for it for a moment
+    // before settling for the content area.
+    let tries = 0
+    let timer = 0
+    const focusHeading = () => {
+      const h1 = document.querySelector<HTMLElement>('main h1')
+      const target = h1 ?? (tries >= 15 ? document.querySelector<HTMLElement>('main') : null)
+      if (target) {
+        target.setAttribute('tabindex', '-1')
+        target.focus({ preventScroll: true })
+        return
+      }
+      tries += 1
+      timer = window.setTimeout(focusHeading, 100)
     }
+    focusHeading()
+    return () => window.clearTimeout(timer)
   }, [pathname, hash])
   return null
 }

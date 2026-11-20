@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { FilmLink, PosterLink } from '../components/FilmLink'
 import { Poster } from '../components/Poster'
 import { Ad, Shell } from '../components/Shell'
@@ -112,7 +112,8 @@ function AddPerson({ taken, onAdd }: { taken: string[]; onAdd: (m: GroupMember) 
           className="min-h-11 rounded-[10px] border-[1.5px] border-field bg-bg px-4 text-base text-ink"
         />
         <p id="g-hint" className="m-0 text-sm text-muted">
-          A username only brings in their latest 50 or so entries. Their export brings the lot.
+          A username only brings in their latest 50 or so entries. Their export loads their full
+          history.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -147,15 +148,13 @@ function AddPerson({ taken, onAdd }: { taken: string[]; onAdd: (m: GroupMember) 
 
 /** One film, and how well each person in the group would take to it. */
 function GroupRow({ r }: { r: Result }) {
-  const lowest = r.members.length
-    ? r.members.reduce((a, b) => (b.match < a.match ? b : a)).member
-    : null
   return (
     <li className="panel grid grid-cols-[92px_1fr] gap-4 sm:grid-cols-[110px_1fr]">
       <PosterLink id={r.tmdb_id}>
         <Poster id={r.tmdb_id} title={r.title} path={r.poster_path} />
       </PosterLink>
       <div className="min-w-0">
+        {r.picked_for && <p className="eyebrow m-0">{r.picked_for}&rsquo;s pick</p>}
         <h3 className="m-0 font-title text-xl font-bold">
           <FilmLink id={r.tmdb_id}>{r.title}</FilmLink>
         </h3>
@@ -164,29 +163,25 @@ function GroupRow({ r }: { r: Result }) {
             .filter(Boolean)
             .join(' · ')}
         </p>
-        <p className="m-0 mt-2 text-sm">
-          <b>Group match {r.match}%</b>{' '}
-          <span className="text-muted">(the lowest of the group)</span>
-        </p>
-        <ul className="m-0 mt-2 grid list-none gap-1.5 p-0">
-          {r.members.map((m) => (
+        <ul
+          className="m-0 mt-3 grid list-none gap-1.5 p-0"
+          aria-label="How well it fits each person"
+        >
+          {(r.fit ?? []).map((f) => (
             <li
-              key={m.member}
-              className="grid grid-cols-[minmax(4rem,9rem)_1fr_3rem] items-center gap-3"
+              key={f.member}
+              className="grid grid-cols-[minmax(4rem,9rem)_1fr_5.5rem] items-center gap-3"
             >
-              <span className="truncate text-sm">
-                {m.member}
-                {m.member === lowest && r.members.length > 1 && (
-                  <span className="text-muted"> (lowest)</span>
-                )}
-              </span>
+              <span className="truncate text-sm">{f.member}</span>
               <span className="h-2 rounded-full bg-surface2" aria-hidden="true">
                 <span
                   className="block h-2 rounded-full bg-accent"
-                  style={{ width: `${Math.min(100, Math.max(0, m.match))}%` }}
+                  style={{ width: `${Math.max(8, 100 - (f.top_percent - 1) * 2.5)}%` }}
                 />
               </span>
-              <span className="text-right text-sm font-bold tabular-nums">{m.match}%</span>
+              <span className="text-right text-sm font-bold tabular-nums">
+                top {f.top_percent}%
+              </span>
             </li>
           ))}
         </ul>
@@ -205,7 +200,7 @@ function GroupRow({ r }: { r: Result }) {
   )
 }
 
-/** `/together` : one list for everyone in the room, ranked by the person who would like it least. */
+/** `/together` : one list for everyone in the room, built by taking turns. */
 export function Together() {
   const { profile } = useProfile()
   if (!profile) return <Navigate to="/" replace />
@@ -225,8 +220,8 @@ function TogetherFor({ profile }: { profile: Profile }) {
   return (
     <Shell title="Watch together">
       <PageTitle title="Watch together">
-        Add the people you are watching with. Each film is scored for everyone, and the list is
-        ranked by the person who would like it least, so nobody gets dragged along.
+        Add the people you are watching with. You take turns: each pick is a film one person would
+        love that everyone else can live with, so nobody gets dragged along.
       </PageTitle>
       <Ad kind="leaderboard" />
 
@@ -276,11 +271,6 @@ function TogetherFor({ profile }: { profile: Profile }) {
             That is the most a group can hold ({MAX_OTHERS + 1}).
           </p>
         )}
-        <p className="m-0 mt-4 max-w-[62ch] text-sm text-muted">
-          Everyone&rsquo;s films stay in this browser and are sent to PlotPoints only to rank this
-          list; nothing about the others is stored. Only add people who are happy for you to use
-          their ratings. <Link to="/privacy">Privacy</Link>
-        </p>
       </section>
 
       {!ready && <p className="empty mt-4">Add one more person to see what you could all watch.</p>}
@@ -293,7 +283,7 @@ function TogetherFor({ profile }: { profile: Profile }) {
         >
           The thinnest history in the group has only {thinnest} {thinnest === 1 ? 'film' : 'films'}{' '}
           rated above 3 stars, so this list leans on very little for that person. An export gives a
-          better picture than a username.
+          better picture than a username (a username only brings in the latest 50 or so entries).
         </p>
       )}
       {results.length > 0 && (
@@ -301,6 +291,10 @@ function TogetherFor({ profile }: { profile: Profile }) {
           <h2 className="sec">
             Films you could <em>all</em> watch
           </h2>
+          <p className="m-0 mb-3 max-w-[62ch] text-sm text-muted">
+            &ldquo;Top 3%&rdquo; means the film is in that person&rsquo;s best 3% of everything we
+            could suggest to them.
+          </p>
           <ol className="m-0 grid list-none gap-4 p-0">
             {results.map((r) => (
               <GroupRow key={r.media_key} r={r} />

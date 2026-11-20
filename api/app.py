@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import scoring
 import snapshot
+from api.events import bucket, log_event
 from api.inbox import Inbox
 from api.letterboxd import LetterboxdError, collapse, fetch_feed
 from api.matching import match_rows
@@ -50,8 +51,9 @@ FRANCHISES_SHOWN = 5  # the page shows a person's top five series, not every one
 FILMS_PER_FRANCHISE = 20  # unseen films kept per series: its best plus the next nineteen
 LOOKUP_CAP = 200  # TMDB lookups per import; the rest are reported as unmatched
 WANTED_CAP = 200  # missing-title ids written to the inbox per request
-SERIES_SEEN_LISTED = 10  # rated films of a series named under a pick
-INFLUENCE_PICKS = 20  # the top picks the "because you enjoyed" row is measured against
+KEYWORDS_SHOWN = 12  # themes listed on a film page
+INFLUENCE_PICKS = 50  # the top picks the "films shaping your picks" row is measured against
+ENJOYED_SHOWN = 12  # films in that row: enough to run the full width of the page
 MAX_PROVIDERS_LISTED = 60
 MAX_SIMILAR = 24  # "more like this" is a row, not a list
 CLOSEST_SHOWN = 5  # liked films named on a film page as closest to it
@@ -269,10 +271,19 @@ def create_app(
             }
         }
 
-    def enjoyed_films(s: snapshot.Snapshot, profiles, results: list[dict], films) -> list[dict]:
-        """The liked films that best explain the top picks, ranked by weighted similarity."""
+    def enjoyed_films(s: snapshot.Snapshot, profiles, picks: list[dict], films) -> list[dict]:
+        """The liked films that pull hardest on the top picks, ranked by weighted similarity.
+
+        `behind` is in how many of those picks the film is one of the three films named as the
+        reason (the same notes the pick's own panel shows), so the row can say how widely a film
+        shapes the list and not only how close it is to one title.
+        """
         ratings = {f.tmdb_id: f.rating for f in films}
-        top = scoring.influence(s, profiles, [r["index"] for r in results[:INFLUENCE_PICKS]])
+        top = scoring.influence(s, profiles, [r["index"] for r in picks], top_n=ENJOYED_SHOWN)
+        behind: dict[int, int] = {}
+        for r in picks:
+            for b in r["members"][0]["because"]:
+                behind[b["tmdb_id"]] = behind.get(b["tmdb_id"], 0) + 1
         return [
             {
                 "tmdb_id": e["tmdb_id"],
@@ -281,7 +292,8 @@ def create_app(
                 "year": int(s.year[e["index"]]) or None,
                 "poster_path": s.poster[e["index"]],
                 "rating": ratings.get(e["tmdb_id"]),
-                "avg_match": round(e["avg_cosine"] * 100),
+                "behind": behind.get(e["tmdb_id"], 0),
+                "of": len(picks),
             }
             for e in top
         ]
@@ -372,6 +384,15 @@ def create_app(
         """Directors or billed cast by film count, narrowed by a name search."""
         return {"people": request.app.state.snap.people(kind, q, limit)}
 
+    @app.get("/keywords")
+    def keywords(
+        request: Request,
+        q: str = Query(default="", max_length=60),
+        limit: int = Query(default=12, ge=1, le=50),
+    ):
+        """TMDB themes ("time travel", "heist") by film count, narrowed by a search."""
+        return {"keywords": request.app.state.snap.people("keyword", q, limit)}
+
     @app.get("/meta")
     def meta(request: Request):
         s = request.app.state.snap
@@ -415,6 +436,7 @@ def create_app(
             "tagline": s.tagline[i],
             "overview": s.overview[i],
             "directors": s.directors[i],
+            "keywords": s.top_keywords(i, KEYWORDS_SHOWN),
             "cast": [{"name": n, "character": c} for n, c in s.cast[i]],
             "providers_as_of": s.providers_as_of,
         }
@@ -477,6 +499,7 @@ def create_app(
         record_wanted(
             request, [f for f in films if not f["in_catalog"] and f["media_type"] == "movie"]
         )
+        log_event("import", kind="username", entries=bucket(len(entries)))
         return {
             "username": body.username,
             "entries": len(entries),
@@ -566,6 +589,7 @@ def create_app(
             res["ambiguous"],
             skipped,
         )
+        log_event("import", kind="export", rows=bucket(len(body.rows)), matched=bucket(len(films)))
         return {
             "films": films,
             "missing": missing,
@@ -588,31 +612,51 @@ def create_app(
             # scores the same inside a genre page as on the main list. They combine with AND.
             fmask = np.ones(len(s), dtype=bool)
             for f in body.facets:
-                one = s.facet_mask(f.kind, f.value)
-                if not one.any():  # a name or decade the catalog does not have: a bad link
-                    raise HTTPException(404, f"No films found for {f.kind} {f.value!r}.")
-                fmask &= one
+                for v in f.values:
+                    if not s.facet_mask(f.kind, v).any():  # not in the catalog: a bad link
+                        raise HTTPException(404, f"No films found for {f.kind} {v!r}.")
+                fmask &= s.facet_values_mask(f.kind, f.values, f.mode)
             facet_info = {
                 "facets": [
-                    {"kind": f.kind, "value": s.facet_name(f.kind, f.value) or f.value}
+                    {
+                        "kind": f.kind,
+                        "values": [s.facet_name(f.kind, v) or v for v in f.values],
+                        "mode": "any" if f.kind == "era" else f.mode,
+                    }
                     for f in body.facets
                 ],
                 "total": int(fmask.sum()),  # may be 0: every filter exists, but not together
             }
             allow = fmask if allow is None else allow & fmask
-        if body.bundle:
+        if len(profiles) > 1 and not body.facets and not body.providers:
+            # A group: take turns (scoring.group_rotation) instead of ranking by the least-keen
+            # member, which drifts to films nobody minds and nobody loves. One film per series is
+            # built in, so `bundle` has nothing left to fold.
+            scored = scoring.score_candidates(s, profiles, reasons=reasons)
+            pool = None
+            results = scoring.group_rotation(scored, body.offset + body.limit)
+            has_more = len(results) == body.offset + body.limit
+            page = [
+                present(s, r) | {"picked_for": r["picked_for"], "fit": r["fit"]}
+                for r in results[body.offset :]
+            ]
+            top_picks = results
+        elif body.bundle:
             # Rank the whole pool, then fold each franchise into its best-ranked film; paging is
             # over the folded entries. The ranking itself is untouched.
-            pool = scoring.rank(s, profiles, limit=MAX_POOL, allow=allow, reasons=reasons)
+            scored = scoring.score_candidates(s, profiles, reasons=reasons)
+            pool = scoring.rank_scored(scored, limit=MAX_POOL, allow=allow)
             entries = bundle_by_franchise(s, pool)
             results = entries[: body.offset + body.limit]
             has_more = len(entries) > body.offset + body.limit
             page = [present(s, r) | bundle_info(s, r) for r in results[body.offset :]]
+            top_picks = entries[:INFLUENCE_PICKS]
         else:
-            pool = None
+            pool = scored = None
             results = scoring.rank(
                 s, profiles, limit=body.offset + body.limit, allow=allow, reasons=reasons
             )
+            top_picks = results[:INFLUENCE_PICKS]
             has_more = len(results) == body.offset + body.limit
             page = [present(s, r) for r in results[body.offset :]]
         if body.providers:
@@ -627,39 +671,36 @@ def create_app(
             info["pool_matches"] = sum(1 for r in overall if allow[r["index"]])
         enjoyed = None
         if body.offset == 0 and not body.providers and not body.facets and len(profiles) == 1:
-            enjoyed = enjoyed_films(s, profiles, results, body.members[0].films)
+            enjoyed = enjoyed_films(s, profiles, top_picks, body.members[0].films)
         branch_out = None
-        beyond = None
-        pick = None
+        wild = wildcard = None
         first_page = (
             body.offset == 0 and not body.providers and not body.facets and pool is not None
         )
         if first_page and results:
-            # a pick from another corner of the person's taste than the top pick (not a score)
-            pick = scoring.beyond_pick(s, pool, results[0])
-            beyond = None if pick is None else present(s, pick)
+            # a good film outside the person's usual genres that still scores for them
+            wild = scoring.wildcard_pick(scored, exclude=[results[0]["index"]])
+            wildcard = None if wild is None else present(s, wild) | {"outside": wild["outside"]}
         if body.branch_out and first_page:
             # varied from the page above it: nothing already shown, none of its franchises
             shown = [r["index"] for r in results]
-            if pick is not None:
-                shown.append(pick["index"])
+            if wild is not None:
+                shown.append(wild["index"])
             branch_out = [
                 present(s, r) for r in scoring.diversify(s, pool, body.branch_out, shown=shown)
             ]
-        # the series each pick belongs to, with the films of it the person has already rated
-        series: dict[str, list[dict]] = {}
-
-        def with_series(item: dict) -> dict:
-            name = item["franchise"]
-            if name:
-                if name not in series:
-                    series[name] = seen_in_franchise(s, name, body)[:SERIES_SEEN_LISTED]
-                item["series_seen"] = series[name]
-            return item
-
-        page = [with_series(x) for x in page]
-        branch_out = None if branch_out is None else [with_series(x) for x in branch_out]
-        beyond = None if beyond is None else with_series(beyond)
+        log_event(
+            "recommend",
+            members=len(profiles),
+            facets=",".join(sorted(f.kind for f in body.facets)) or "none",
+            multi=any(len(f.values) > 1 for f in body.facets),
+            any_mode=any(f.mode == "any" and len(f.values) > 1 for f in body.facets),
+            providers=len(body.providers),
+            paged=body.offset > 0,
+            wildcard=wildcard is not None,
+            empty=not page,
+            liked=bucket(info["liked_films"]),
+        )
         return {
             "snapshot": s.version,
             "group": len(profiles) > 1,
@@ -667,7 +708,7 @@ def create_app(
             "results": page,
             "enjoyed": enjoyed,
             "branch_out": branch_out,
-            "beyond": beyond,
+            "wildcard": wildcard,
             "facet": facet_info,
             "has_more": has_more,
             **info,
@@ -715,6 +756,9 @@ def create_app(
         done = request.app.state.inbox.store_import(
             source=body.source, username=body.username, films=films
         )
+        log_event(
+            "consent", source=body.source.replace("letterboxd-", ""), films=bucket(len(films))
+        )
         return {
             "stored": len(films),
             "token": done["token"],
@@ -725,6 +769,7 @@ def create_app(
     def delete(body: DeleteRequest, request: Request):
         limiter.check(client_of(request), "delete", limit=5)
         request.app.state.inbox.request_deletion(body.token)
+        log_event("delete")
         return {"requested": True, "note": "Removed the next time the pipeline runs."}
 
     return app

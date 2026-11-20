@@ -80,6 +80,8 @@ export const api = {
   match: (rows: CsvRow[]) =>
     post<MatchResponse>('/match', { rows }),
   facets: () => request<FacetList>('/facets'),
+  keywords: (q = '', limit = 12) =>
+    request<{ keywords: Person[] }>(`/keywords?q=${encodeURIComponent(q)}&limit=${limit}`),
   people: (kind: 'director' | 'actor', q = '', limit = 12) =>
     request<{ people: Person[] }>(
       `/people?kind=${kind}&q=${encodeURIComponent(q)}&limit=${limit}`,

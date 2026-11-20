@@ -89,7 +89,9 @@ function ClosestToYou({ id }: { id: number }) {
                 <FilmLink id={c.tmdb_id}>{c.title}</FilmLink>
               </b>
               <small>{c.year}</small>
-              {ratings.get(c.tmdb_id) != null && <Stars rating={ratings.get(c.tmdb_id) as number} />}
+              {ratings.get(c.tmdb_id) != null && (
+                <Stars rating={ratings.get(c.tmdb_id) as number} />
+              )}
               <small>{c.match}% similar</small>
             </figcaption>
           </figure>
@@ -116,7 +118,10 @@ function Header({ f }: { f: FilmDetail }) {
           <p className="meta m-0">
             {f.year != null && (
               <span>
-                <Link to={browsePath('era', decadeOf(f.year))} title={`More from the ${decadeOf(f.year)}s`}>
+                <Link
+                  to={browsePath('era', decadeOf(f.year))}
+                  title={`More from the ${decadeOf(f.year)}s`}
+                >
                   {f.year}
                 </Link>
               </span>
@@ -129,6 +134,15 @@ function Header({ f }: { f: FilmDetail }) {
               {f.genres.map((g) => (
                 <Link key={g} to={browsePath('genre', g)} className="chip">
                   {g}
+                </Link>
+              ))}
+            </div>
+          )}
+          {f.keywords?.length > 0 && (
+            <div className="chips mt-2" aria-label="Themes">
+              {f.keywords.map((k) => (
+                <Link key={k} to={browsePath('keyword', k)} className="chip">
+                  {k}
                 </Link>
               ))}
             </div>
@@ -147,7 +161,12 @@ function Header({ f }: { f: FilmDetail }) {
             </p>
           )}
           <div className="chips mt-4">
-            <a className="btn primary" href={tmdbWatchUrl(f.tmdb_id)} target="_blank" rel="noreferrer">
+            <a
+              className="btn primary"
+              href={tmdbWatchUrl(f.tmdb_id)}
+              target="_blank"
+              rel="noreferrer"
+            >
               Where to watch
             </a>
             <a

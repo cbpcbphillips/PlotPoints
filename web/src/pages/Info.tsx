@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Shell } from '../components/Shell'
+import { Shell, TmdbMark } from '../components/Shell'
 import { PageTitle } from '../components/States'
 import { api } from '../lib/api'
+import { ANALYTICS_ON } from '../lib/env'
 import { prettyDate } from '../lib/format'
 import { useProfile } from '../lib/profile'
 
@@ -28,10 +29,10 @@ export function About() {
 
       <Block title="How it works">
         <p className="m-0">
-          Every film in the catalog is turned into a vector of numbers by an embedding model, from its
-          cast, director, genres, keywords and plot. Films that are alike land close together. Your
-          ratings pick out the films you loved, and each film you have not seen is scored by how close
-          it sits to them.
+          Every film in the catalog is turned into a vector of numbers by an embedding model, from
+          its cast, director, genres, keywords and plot. Films that are alike land close together.
+          Your ratings pick out the films you loved, and each film you have not seen is scored by
+          how close it sits to them.
         </p>
         <p className="m-0">
           The catalog holds {meta.data ? meta.data.titles.toLocaleString() : 'about 23,700'} films
@@ -62,16 +63,29 @@ export function About() {
 
       <Block title="Credits">
         <p className="m-0">
+          <TmdbMark className="mb-2 h-5 w-auto" />
+        </p>
+        <p className="m-0">
           This product uses the TMDB API but is not endorsed or certified by TMDB. Film metadata,
           images and ratings come from{' '}
-          <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" className="underline">
+          <a
+            href="https://www.themoviedb.org"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
             The Movie Database
           </a>
           .
         </p>
         <p className="m-0">
           Streaming availability comes from{' '}
-          <a href="https://www.justwatch.com" target="_blank" rel="noreferrer" className="underline">
+          <a
+            href="https://www.justwatch.com"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
             JustWatch
           </a>
           , for the United States only
@@ -111,7 +125,10 @@ export function Privacy() {
         text: 'Done. Your stored ratings will be removed the next time the pipeline runs.',
       })
     } catch (err) {
-      setStatus({ ok: false, text: err instanceof Error ? err.message : 'That did not go through.' })
+      setStatus({
+        ok: false,
+        text: err instanceof Error ? err.message : 'That did not go through.',
+      })
     } finally {
       setBusy(false)
     }
@@ -123,11 +140,31 @@ export function Privacy() {
       <Block title="What stays on your device">
         <p className="m-0">
           PlotPoints has no accounts. Your Letterboxd export is read in your browser, and your films
-          and ratings are kept in this browser&rsquo;s storage so your list is still here next visit.
-          To make a recommendation, the films you have seen and their ratings are sent to the server,
-          used to compute your list, and not kept.
+          and ratings are kept in this browser&rsquo;s storage so your list is still here next
+          visit. To make a recommendation, the films you have seen and their ratings are sent to the
+          server, used to compute your list, and not kept.
         </p>
       </Block>
+      <Block title="What the server logs">
+        <p className="m-0">
+          For each request the server notes the kind of page asked for, whether it worked and how
+          long it took, and for a few actions an anonymous count: that a list was made for one or
+          several people, which kinds of filter were used, a rough size for a history (for example
+          &ldquo;15 to 49 films&rdquo;), and that an import, a kept copy or a deletion happened. It
+          never logs film titles or ids, ratings, names, usernames, deletion tokens or addresses, so
+          the log cannot say who did anything. It is used to see whether PlotPoints is useful and
+          whether it is running well.
+        </p>
+      </Block>
+      {ANALYTICS_ON && (
+        <Block title="Visit counts">
+          <p className="m-0">
+            Visits are counted with Cloudflare Web Analytics. It sets no cookies and does not follow
+            you from site to site; it sees which page was opened, the country and the kind of
+            device, not who you are.
+          </p>
+        </Block>
+      )}
       <Block title="Watching together">
         <p className="m-0">
           If you add other people to a group, their films and ratings are kept in this browser too,
@@ -137,16 +174,18 @@ export function Privacy() {
           the Together page.
         </p>
       </Block>
-      <Block title="What is stored, only if you agree">
+      <Block title="What is stored, unless you opt out">
         <p className="m-0">
-          If you tick the box when importing, PlotPoints keeps a copy of your film list (a TMDB id,
-          your rating and whether it was a rewatch for each film) to improve the project. If you
-          imported by username, your public Letterboxd username is kept with it. Your reviews, tags
-          and the file itself are never sent.
+          When you import, the box that lets PlotPoints keep a copy of your film list is ticked for
+          you. Untick it and nothing is kept. If you leave it ticked, PlotPoints keeps a TMDB id,
+          your rating and whether it was a rewatch for each film, to improve the project. It is
+          anonymous: your Letterboxd username and your name are never sent with it, so the copy
+          cannot be tied back to you. Your reviews, tags and the file itself are never sent.
         </p>
         <p className="m-0">
-          Agreeing gives you a deletion token, kept in this browser. It is the only way to delete
-          what was stored, because there is no account to sign in to.
+          Keeping a copy gives you a deletion token, kept in this browser. It is the only way to
+          delete what was stored, because there is no account to sign in to, so clearing this
+          browser&rsquo;s data without deleting first means the copy can no longer be removed.
         </p>
       </Block>
       <Block title="Delete my data" id="delete">
@@ -165,7 +204,9 @@ export function Privacy() {
             </button>
           </div>
         ) : (
-          <p className="m-0">Nothing of yours is stored. If you saved a token elsewhere, use it here:</p>
+          <p className="m-0">
+            Nothing of yours is stored. If you saved a token elsewhere, use it here:
+          </p>
         )}
         <form
           className="flex flex-wrap gap-3"

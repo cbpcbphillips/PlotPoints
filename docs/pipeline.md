@@ -246,7 +246,14 @@ the full history (the app's importer handles that).
 ## 5. Rebuild and publish the snapshot
 
 The API never queries Snowflake. It loads a snapshot: the embeddings plus what the app shows (title,
-year, rating, poster and backdrop paths, franchise, genres, streaming providers).
+year, rating, poster and backdrop paths, franchise, genres, streaming providers), and in
+`details.json` the film-page text, directors, the top ten billed cast and TMDB keywords. Keywords
+come from `MART.BRIDGE_MEDIA_KEYWORD`; only themes on at least `MIN_KEYWORD_FILMS` (5) films are
+kept, and a few disc tags (credit stingers) are hidden (`HIDDEN_KEYWORDS` in
+`src/publish_snapshot.py`). That is about 7,500 themes and 2.8 MB. Browsing by genre, director,
+actor, theme and decade runs on these fields, so an older snapshot without `details.json` still
+serves everything except the people and theme pages. The snapshot read is a handful of `SELECT`s,
+about 20 seconds and 0.01 credits.
 
 ```powershell
 just snapshot                  # MART -> data/snapshots/<version>/, moves LATEST

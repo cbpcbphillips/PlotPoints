@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { ADS_ON, FEEDBACK_URL } from '../lib/env'
 import { resolvedTheme, toggleTheme, useSettings } from '../lib/settings'
 
 const TABS: [string, string][] = [
@@ -11,6 +12,40 @@ const TABS: [string, string][] = [
   ['Import', '/import'],
   ['Settings', '/settings'],
 ]
+
+// On a phone there is room for four tabs; the rest go behind "More".
+const PHONE_TABS = TABS.filter(([, to]) =>
+  ['/for-you', '/browse', '/streaming', '/together'].includes(to),
+)
+const MORE_TABS = TABS.filter(([, to]) => !PHONE_TABS.some(([, t]) => t === to))
+
+const tabClass = ({ isActive }: { isActive: boolean }) => `navlink${isActive ? ' on' : ''}`
+
+/** The phone navigation: four tabs and a "More" menu (a <details>, so it works without script). */
+function PhoneNav() {
+  const { pathname } = useLocation()
+  const inMore = MORE_TABS.some(([, to]) => pathname.startsWith(to))
+  return (
+    <nav aria-label="Sections" className="navlinks navlinks-narrow">
+      {PHONE_TABS.map(([label, to]) => (
+        <NavLink key={to} to={to} className={tabClass}>
+          {label}
+        </NavLink>
+      ))}
+      {/* keyed on the path so the menu closes itself after a choice */}
+      <details key={pathname} className="more">
+        <summary className={`navlink${inMore ? ' on' : ''}`}>More</summary>
+        <div className="menu">
+          {MORE_TABS.map(([label, to]) => (
+            <NavLink key={to} to={to} className={tabClass}>
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      </details>
+    </nav>
+  )
+}
 
 function ThemeButton() {
   const settings = useSettings()
@@ -40,21 +75,35 @@ function TopBar({ nav }: { nav: boolean }) {
           Plot<b>Points</b>
         </Link>
         {nav && (
-          <nav aria-label="Sections" className="navlinks flex gap-0.5">
-            {TABS.map(([label, to]) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) => `navlink${isActive ? ' on' : ''}`}
-              >
-                {label}
-              </NavLink>
-            ))}
-          </nav>
+          <>
+            <nav aria-label="Sections" className="navlinks navlinks-wide">
+              {TABS.map(([label, to]) => (
+                <NavLink key={to} to={to} className={tabClass}>
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+            <PhoneNav />
+          </>
         )}
         <ThemeButton />
       </div>
     </header>
+  )
+}
+
+/** TMDB's logo, if its file has been added at web/public/tmdb.svg (their brand asset; see
+ * docs/deploy.md). Without the file the image hides itself and the text credit still shows. */
+export function TmdbMark({ className = 'h-3.5 w-auto' }: { className?: string }) {
+  return (
+    <img
+      src="/tmdb.svg"
+      alt="TMDB"
+      className={className}
+      onError={(e) => {
+        e.currentTarget.style.display = 'none'
+      }}
+    />
   )
 }
 
@@ -65,6 +114,18 @@ function Footer() {
       <Link to="/settings">Display settings</Link>
       <Link to="/privacy">Privacy</Link>
       <Link to="/privacy#delete">Delete my data</Link>
+      {FEEDBACK_URL && (
+        <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
+          Send feedback
+        </a>
+      )}
+      <p className="m-0 flex basis-full items-center justify-center gap-3 text-center text-xs">
+        <TmdbMark />
+        <span>
+          This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming
+          availability from JustWatch.
+        </span>
+      </p>
     </footer>
   )
 }
@@ -90,6 +151,7 @@ const AD_VISIBILITY: Record<AdKind, string> = {
 }
 
 export function Ad({ kind }: { kind: AdKind }) {
+  if (!ADS_ON) return null // the friends-only launch has no ads; see lib/env.ts
   const rail = kind.startsWith('rail')
   return (
     <aside

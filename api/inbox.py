@@ -18,6 +18,15 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dotenv import dotenv_values
+
+
+def _setting(name: str) -> str:
+    """A setting from the process environment (deployed: the host's secrets), else from a local
+    .env (development), the same fallback the TMDB lookup uses. Only ever asked for the inbox's own
+    names: the pipeline uploader's keys in .env are never read by the API."""
+    return os.environ.get(name) or dotenv_values(".env").get(name) or ""
+
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -28,15 +37,25 @@ class Inbox:
         self.mode = os.environ.get("PLOTPOINTS_INBOX", "local")
         self.local_dir = Path(os.environ.get("PLOTPOINTS_DATA_DIR", "data")) / "inbox"
         self._s3 = None
-        self._bucket = os.environ.get("AWS_S3_BUCKET", "")
+        self._bucket = _setting("AWS_S3_BUCKET")
         if self.mode == "s3":
             import boto3
 
+            missing = [
+                n
+                for n in ("INBOX_AWS_ACCESS_KEY_ID", "INBOX_AWS_SECRET_ACCESS_KEY", "AWS_S3_BUCKET")
+                if not _setting(n)
+            ]
+            if missing:
+                raise RuntimeError(
+                    f"PLOTPOINTS_INBOX=s3 but {', '.join(missing)} is not set (in the environment "
+                    "or .env). See docs/external_setup.md, section 5b."
+                )
             self._s3 = boto3.client(
                 "s3",
-                aws_access_key_id=os.environ["INBOX_AWS_ACCESS_KEY_ID"],
-                aws_secret_access_key=os.environ["INBOX_AWS_SECRET_ACCESS_KEY"],
-                region_name=os.environ.get("AWS_REGION") or "us-east-1",
+                aws_access_key_id=_setting("INBOX_AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=_setting("INBOX_AWS_SECRET_ACCESS_KEY"),
+                region_name=_setting("AWS_REGION") or "us-east-1",
             )
 
     def _put(self, key: str, record: dict) -> None:

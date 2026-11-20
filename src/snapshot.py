@@ -60,6 +60,7 @@ class Snapshot:
     tagline: list[str | None] = field(default_factory=list)
     directors: list[list[str]] = field(default_factory=list)
     cast: list[list[list[str | None]]] = field(default_factory=list)  # per title: [name, character]
+    keywords: list[list[str]] = field(default_factory=list)  # TMDB themes, for browsing
     by_key: dict[str, int] = field(default_factory=dict)
     by_tmdb: dict[tuple[str, int], int] = field(default_factory=dict)
     by_title_year: dict[tuple[str, int], list[int]] = field(default_factory=dict)
@@ -78,6 +79,8 @@ class Snapshot:
             self.directors = [[] for _ in range(n)]
         if len(self.cast) != n:
             self.cast = [[] for _ in range(n)]
+        if len(self.keywords) != n:
+            self.keywords = [[] for _ in range(n)]
         self.by_key = {k: i for i, k in enumerate(self.media_key)}
         self.by_tmdb = {
             (t, int(i)): n
@@ -107,9 +110,23 @@ class Snapshot:
             rows = (any(_fold(d) == want for d in ds) for ds in self.directors)
         elif kind == "actor":
             rows = (any(_fold(c[0] or "") == want for c in cs) for cs in self.cast)
+        elif kind == "keyword":
+            rows = (any(_fold(k) == want for k in ks) for ks in self.keywords)
         else:
             raise ValueError(f"Unknown facet kind {kind!r}")
         return np.fromiter(rows, dtype=bool, count=len(self))
+
+    def facet_values_mask(self, kind: str, values: list[str], mode: str = "all") -> np.ndarray:
+        """Titles matching ALL (`mode="all"`) or ANY (`"any"`) of several values of one kind.
+
+        "Romance and Comedy" is two genres on one film; "Drama or Thriller" is either. Decades are
+        always "any": no film is in two of them.
+        """
+        masks = [self.facet_mask(kind, v) for v in values]
+        if not masks:
+            return np.ones(len(self), dtype=bool)
+        use_any = mode == "any" or kind == "era"
+        return np.logical_or.reduce(masks) if use_any else np.logical_and.reduce(masks)
 
     def facet_name(self, kind: str, value: str) -> str | None:
         """The properly-cased name for a facet value as the catalog spells it (None if absent)."""
@@ -121,6 +138,8 @@ class Snapshot:
             names = (g for gs in self.genres for g in gs)
         elif kind == "director":
             names = (d for ds in self.directors for d in ds)
+        elif kind == "keyword":
+            names = (k for ks in self.keywords for k in ks)
         else:
             names = (c[0] or "" for cs in self.cast for c in cs)
         return next((n for n in names if _fold(n) == want), None)
@@ -142,6 +161,8 @@ class Snapshot:
                 names = (d for ds in self.directors for d in set(ds))
             elif kind == "actor":
                 names = (n for cs in self.cast for n in {c[0] for c in cs if c[0]})
+            elif kind == "keyword":
+                names = (k for ks in self.keywords for k in set(ks))
             else:
                 raise ValueError(f"Unknown people kind {kind!r}")
             cache[kind] = Counter(names)
@@ -151,6 +172,12 @@ class Snapshot:
         hits.sort(key=lambda nc: (-nc[1], nc[0]))
         return [{"name": n, "count": c} for n, c in hits[:limit]]
 
+    def top_keywords(self, i: int, n: int) -> list[str]:
+        """A film's themes, the ones on the most films first (they are the ones worth browsing)."""
+        self.people("keyword", "", 1)  # builds the counts once
+        counts = self.__dict__["_people_counts"]["keyword"]
+        return sorted(self.keywords[i], key=lambda k: (-counts[k], k))[:n]
+
     def provider_mask(self, groups: list[str]) -> np.ndarray:
         """Boolean mask of titles streaming on ANY of the named provider groups."""
         wanted = {self.provider_names.index(g) for g in groups if g in self.provider_names}
@@ -159,7 +186,7 @@ class Snapshot:
         )
 
 
-FACET_KINDS = ("genre", "director", "actor", "era")
+FACET_KINDS = ("genre", "keyword", "director", "actor", "era")
 
 
 def decade_of(year: int) -> int:
@@ -269,4 +296,5 @@ def load(directory: Path) -> Snapshot:
         tagline=det.get("tagline") or [],
         directors=det.get("directors") or [],
         cast=det.get("cast") or [],
+        keywords=det.get("keywords") or [],
     )

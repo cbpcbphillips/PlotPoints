@@ -42,8 +42,10 @@ just api
 - Interactive docs: <http://127.0.0.1:8000/docs>
 - Health check: <http://127.0.0.1:8000/health>; loaded snapshot version: `/meta`.
 
-Endpoints: `GET /health`, `GET /meta`, `POST /import/letterboxd`, `POST /match`, `POST /recommend`,
-`POST /franchises`, `POST /profile`, `POST /consent`, `POST /delete`.
+Endpoints: `GET /health`, `GET /meta`, `GET /facets`, `GET /people`, `GET /keywords`,
+`GET /film/{id}`, `GET /film/{id}/similar`, `POST /film/{id}/for-me`, `POST /import/letterboxd`,
+`POST /match`, `POST /recommend`, `POST /franchises`, `POST /profile`, `POST /consent`,
+`POST /delete`.
 
 ## 4. Start the frontend
 
@@ -64,9 +66,33 @@ Other frontend commands:
 | Command | What it does |
 |---|---|
 | `npm run typecheck` | TypeScript check |
-| `npm test` | Vitest unit tests (export parser, import helpers, page logic) |
+| `npm test` | Vitest unit tests (export parser, import helpers, settings, browse URL model, group names) |
 | `npm run build` | Typecheck + production build into `web/dist/` |
 | `npm run preview` | Serve the production build locally |
+
+## Pages
+
+| Route | What it is |
+|---|---|
+| `/` | First visit: import a Letterboxd export or username. Returning visitors go to `/for-you` |
+| `/for-you` | Top pick and why, the comfort-zone pick, the films shaping your picks, other recommendations, branch out |
+| `/browse`, `/browse/:kind/:value` | Genre, theme (keyword), director, actor, decade. More values and kinds in the query string, e.g. `/browse/genre/Romance?genre=Comedy&genre_mode=any&era=1990`; all-of is the default, `*_mode=any` means either |
+| `/together` | Watch together: add people, then a list built by taking turns |
+| `/franchises`, `/streaming` | Series shelves, best matches on your streaming services |
+| `/film/:tmdbId` | Film details, themes, cast, closest films you rated, similar films |
+| `/import`, `/settings`, `/about`, `/privacy` | Profile and history, display settings, credits, data and deletion |
+
+**Settings** (`/settings`, stored in `pp-settings`, applied as attributes on `<html>` by
+`lib/settings.ts` and again before first paint by the script in `index.html`): `data-theme`,
+`data-contrast="more"`, `data-reading="dyslexia"`, `data-motion="reduce"`, and the root font size.
+
+**Navigation and focus.** On a route change focus moves to the page heading (the app waits briefly
+for it to load), and `<main>` shows no focus ring. A skip link comes first in the tab order. On
+phones the top bar shows four tabs and a "More" menu.
+
+**Where data lives.** The profile (`pp-profile`) and any group members (`pp-group`) stay in the
+browser. The consent box on import is ticked by default and sends only film ids and ratings,
+anonymously (see [roadmap](roadmap.md) for the GDPR caveat).
 
 ## Configuration
 
@@ -79,6 +105,13 @@ Other frontend commands:
 | `INBOX_AWS_ACCESS_KEY_ID` / `INBOX_AWS_SECRET_ACCESS_KEY` | API (inbox `s3` mode) | — | Write-only S3 credential; also needs `AWS_S3_BUCKET`, `AWS_REGION` |
 | `TMDB_API_KEY` | API (optional) | read from `.env` locally | Lets `/match` ask TMDB about import rows the snapshot cannot match (re-dated films, TV, films outside the catalog). Without it matching is snapshot-only |
 | `VITE_API_URL` | Frontend build | `/api` | Absolute API URL for a deployed frontend, e.g. `https://plotpoints-api.example.run.app` |
+| `VITE_ADS` | Frontend build | off | `true` renders the ad slots (rails, leaderboard, in-feed). Leave it off for the friends-only launch; ads need a TMDB commercial licence first |
+| `VITE_ANALYTICS` | Frontend build | off | `true` once Cloudflare Web Analytics is on; adds a "Visit counts" paragraph to the Privacy page |
+| `VITE_FEEDBACK_URL` | Frontend build | none | A `mailto:` or form URL; shows "Send feedback" in the footer when set |
+
+Put the two `VITE_` switches in `web/.env.local` to try them in dev. TMDB's logo is picked up from
+`web/public/tmdb.svg` if you add the file (their brand asset, not in the repo); without it the
+footer and About page show the text credit only.
 
 Locally you need none of these; the defaults work.
 

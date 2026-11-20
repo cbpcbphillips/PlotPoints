@@ -33,7 +33,7 @@ export function useRecommendations(
       profile.notForMe.join(','),
       providers.join('|'),
       firstPage,
-      facets?.map((f) => `${f.kind}:${f.value}`).join(',') ?? '',
+      facets?.map((f) => `${f.kind}:${f.mode}:${f.values.join('|')}`).join(',') ?? '',
     ],
     initialPageParam: 0,
     enabled,
@@ -151,9 +151,6 @@ function Hero({ r, asOf, onNope }: { r: Result; asOf: string | undefined; onNope
 
 function Why({ r, ratings }: { r: Result; ratings: Map<number, number | null> }) {
   const because = r.members[0]?.because ?? []
-  // series films you rated that the three closest films above do not already name
-  const named = new Set(because.map((b) => b.tmdb_id))
-  const alsoSeen = (r.series_seen ?? []).filter((f) => !named.has(f.tmdb_id))
   return (
     <section className="panel" aria-labelledby="why">
       <div className="why-head">
@@ -177,50 +174,46 @@ function Why({ r, ratings }: { r: Result; ratings: Map<number, number | null> })
           )
         })}
       </ol>
-      {alsoSeen.length > 0 && (
-        <p className="m-0 mt-3 text-sm text-muted">
-          Also in {r.franchise}, which you rated:{' '}
-          {alsoSeen.map((f, i) => (
-            <span key={f.tmdb_id}>
-              {i > 0 && ', '}
-              <FilmLink id={f.tmdb_id}>{f.title}</FilmLink>
-              {f.rating != null && ` (${f.rating}★)`}
-            </span>
-          ))}
-        </p>
-      )}
     </section>
   )
 }
 
 /**
- * A pick from another corner of the person's taste than the top pick, but still rooted in films
- * they have rated: the server returns the best-ranked film whose reasons do not overlap the top
- * pick's (scoring.beyond_pick). The copy names the films it sits near.
+ * A good film from a genre this person rarely rates, that still scores well for them. The server
+ * picks it (scoring.wildcard_pick). The copy says what is true of it, and does not claim it is
+ * similar to what they rated: that is the point of it.
  */
-function Beyond({ other }: { other: Result }) {
-  const near = (other.members[0]?.because ?? []).slice(0, 2).map((b) => b.title)
+function Wildcard({ pick }: { pick: Result }) {
+  const o = pick.outside
   return (
-    <aside className="panel" aria-labelledby="beyond">
-      <h2 id="beyond">Another side of your taste</h2>
+    <aside className="panel" aria-labelledby="wild">
+      <h2 id="wild">Step outside your comfort zone</h2>
       <div className="sp">
-        <PosterLink id={other.tmdb_id}>
-          <Poster id={other.tmdb_id} title={other.title} path={other.poster_path} />
+        <PosterLink id={pick.tmdb_id}>
+          <Poster id={pick.tmdb_id} title={pick.title} path={pick.poster_path} />
         </PosterLink>
         <div>
           <b className="font-title">
-            <FilmLink id={other.tmdb_id}>{other.title}</FilmLink>
+            <FilmLink id={pick.tmdb_id}>{pick.title}</FilmLink>
           </b>
           <div className="meta">
-            {other.year && <span>{other.year}</span>}
-            {other.runtime && <span>{other.runtime} min</span>}
+            {pick.year && <span>{pick.year}</span>}
+            {pick.genres.length > 0 && <span>{pick.genres.slice(0, 2).join(', ')}</span>}
+            {pick.tmdb_rating != null && <span>TMDB {pick.tmdb_rating.toFixed(1)}</span>}
           </div>
-          <p>
-            {other.match}% match.{' '}
-            {near.length > 0 && (
-              <>Near {near.join(' and ')}, which you rated, and a long way from the pick above.</>
-            )}
-          </p>
+          {o && (
+            <p>
+              {o.genre ? (
+                <>
+                  {o.liked_in_genre === 0
+                    ? `None of your ${o.liked_total} liked films are ${o.genre}.`
+                    : `Only ${o.liked_in_genre} of your ${o.liked_total} liked ${o.liked_in_genre === 1 ? 'film is' : 'films are'} ${o.genre}.`}{' '}
+                </>
+              ) : null}
+              It is well rated, and still scores in the top {o.top_percent}% of everything we could
+              suggest for you.
+            </p>
+          )}
         </div>
       </div>
     </aside>
@@ -241,7 +234,9 @@ function EnjoyedCard({ e }: { e: Enjoyed }) {
         </b>
         <small>{e.year}</small>
         {e.rating != null && <Stars rating={e.rating} />}
-        <small>{e.avg_match}% avg match</small>
+        <small>
+          Behind {e.behind} of your top {e.of}
+        </small>
       </figcaption>
     </figure>
   )
@@ -261,15 +256,15 @@ function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number)
     staleTime: Infinity,
   })
   const branchOut = q.data?.pages[0].branch_out ?? []
-  const beyond = q.data?.pages[0].beyond ?? undefined
+  const wildcard = q.data?.pages[0].wildcard ?? undefined
   const inBranchOut = new Set(branchOut.map((r) => r.tmdb_id))
   // a later page can reach films the branch-out row already shows; show each once
   const results = (q.data?.pages.flatMap((p) => p.results) ?? []).filter(
     (r, i) => i === 0 || !inBranchOut.has(r.tmdb_id),
   )
   const [top, ...others] = results
-  // the "another side" pick has its own panel; do not list it again in the row below
-  const rest = others.filter((r) => r.tmdb_id !== beyond?.tmdb_id)
+  // the comfort-zone pick has its own panel; do not list it again in the row below
+  const rest = others.filter((r) => r.tmdb_id !== wildcard?.tmdb_id)
   const enjoyed = q.data?.pages[0].enjoyed ?? []
   const ratings = new Map(profile.films.map((f) => [f.tmdb_id, f.rating]))
 
@@ -287,16 +282,19 @@ function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number)
             />
             <ThinTaste liked={q.data?.pages[0].liked_films ?? 0} source={profile.source} />
             <Ad kind="leaderboard" />
-            <div className="two" style={beyond ? undefined : { gridTemplateColumns: '1fr' }}>
+            <div className="two" style={wildcard ? undefined : { gridTemplateColumns: '1fr' }}>
               <Why r={top} ratings={ratings} />
-              {beyond && <Beyond other={beyond} />}
+              {wildcard && <Wildcard pick={wildcard} />}
             </div>
 
             {enjoyed.length > 0 && (
               <>
                 <h2 className="sec">
-                  Because you <em>enjoyed</em>
+                  The films <em>shaping</em> your picks
                 </h2>
+                <p className="m-0 mb-3 max-w-[62ch] text-sm text-muted">
+                  From everything you rated, these pull hardest on your recommendations.
+                </p>
                 <div className="row">
                   {enjoyed.map((e) => (
                     <EnjoyedCard key={e.media_key} e={e} />

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,11 +26,19 @@ class Member(BaseModel):
     films: list[Film] = Field(max_length=MAX_FILMS)
 
 
-class Facet(BaseModel):
-    """Restrict the ranking to one genre, director, billed actor or decade."""
+FacetValue = Annotated[str, Field(min_length=1, max_length=80)]
 
-    kind: Literal["genre", "director", "actor", "era"]
-    value: str = Field(min_length=1, max_length=80)
+
+class Facet(BaseModel):
+    """Restrict the ranking to some genres, keywords, directors, billed actors or decades.
+
+    `mode` says how the values of one kind combine: "all" (Romance AND Comedy: films that are both)
+    or "any" (Drama OR Thriller: films that are either). Decades are always "any".
+    """
+
+    kind: Literal["genre", "keyword", "director", "actor", "era"]
+    values: list[FacetValue] = Field(min_length=1, max_length=8)
+    mode: Literal["all", "any"] = "all"
 
 
 class RecommendRequest(BaseModel):
@@ -42,9 +50,9 @@ class RecommendRequest(BaseModel):
     bundle: bool = False
     # Size of the varied second row; only returned with the first page, and only unfiltered.
     branch_out: int = Field(default=0, ge=0, le=24)
-    # Browse: only titles that match ALL of these (one per kind): a genre, a director, a billed
-    # actor, a decade.
-    facets: list[Facet] = Field(default_factory=list, max_length=4)
+    # Browse: only titles that match EVERY facet here (one facet per kind; each can hold several
+    # values, combined all-of or any-of).
+    facets: list[Facet] = Field(default_factory=list, max_length=5)
 
     @field_validator("facets")
     @classmethod

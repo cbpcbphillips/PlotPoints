@@ -114,6 +114,14 @@ test-snowflake *args:
 test-aws *args:
     uv run src/check_aws.py {{args}}
 
+# The API's inbox key: put-only on inbox/*. --write proves it can write there and nothing else
+test-inbox *args:
+    uv run src/check_inbox.py {{args}}
+
+# Daily usage numbers from the API log: gcloud run services logs read ... | just usage
+usage *args:
+    uv run src/usage_report.py {{args}}
+
 # --- dbt (transformed schema) ---
 
 # Run dbt against plotpoints_dbt (.env loaded, isolated via uvx). e.g. `just dbt build`

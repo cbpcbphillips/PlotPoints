@@ -38,6 +38,12 @@ def _database() -> str:
 
 
 CAST_LIMIT = 10  # billed cast shown on the film page
+# TMDB keywords are free text and long-tailed: tens of thousands of them, most on a film or two.
+# Only themes on at least this many films are browsable, which keeps the snapshot small and the
+# list free of one-off tags.
+MIN_KEYWORD_FILMS = 5
+# Tags about the disc, not the film: nobody browses for them.
+HIDDEN_KEYWORDS = frozenset({"duringcreditsstinger", "aftercreditsstinger", "post-credits scene"})
 
 
 def build(conn) -> tuple[np.ndarray, dict, dict, str, str]:
@@ -97,6 +103,16 @@ def build(conn) -> tuple[np.ndarray, dict, dict, str, str]:
         )
         person_rows = cur.fetchall()
 
+        cur.execute(
+            f"""
+            select b.media_key, k.keyword_name
+            from {db}.MART.BRIDGE_MEDIA_KEYWORD b
+            join {db}.MART.DIM_KEYWORD k on k.keyword_id = b.keyword_id
+            qualify count(*) over (partition by b.keyword_id) >= {MIN_KEYWORD_FILMS}
+            """
+        )
+        keyword_rows = cur.fetchall()
+
         # when TMDB's availability data was fetched: the newest catalog load
         cur.execute(f"select max(loaded_at) from {db}.RAW.TMDB_TITLES")
         loaded = cur.fetchone()[0]
@@ -141,12 +157,17 @@ def build(conn) -> tuple[np.ndarray, dict, dict, str, str]:
                 directors[media_key].append(name)
         elif len(cast[media_key]) < CAST_LIMIT:
             cast[media_key].append([name, character or None])
+    keywords: dict[str, list[str]] = defaultdict(list)
+    for media_key, name in keyword_rows:
+        if name.lower() not in HIDDEN_KEYWORDS:
+            keywords[media_key].append(name)
     keys = catalog["media_key"]
     details = {
         "overview": [text_rows.get(k, (None, None))[0] or None for k in keys],
         "tagline": [text_rows.get(k, (None, None))[1] or None for k in keys],
         "directors": [directors.get(k, []) for k in keys],
         "cast": [cast.get(k, []) for k in keys],
+        "keywords": [sorted(set(keywords.get(k, []))) for k in keys],
     }
     as_of = loaded.date().isoformat() if loaded else datetime.now(UTC).date().isoformat()
     return vectors, catalog, details, model, as_of

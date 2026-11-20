@@ -20,6 +20,7 @@ def with_details(snap: snapshot.Snapshot) -> snapshot.Snapshot:
     snap.tagline[i] = "Nothing is alone."
     snap.directors[i] = ["Ada Director"]
     snap.cast[i] = [["Ann Actor", "Lead"], ["Bo Actor", None]]
+    snap.keywords[i] = ["time travel", "heist"]
     return snap
 
 
@@ -94,6 +95,7 @@ def details_of(snap: snapshot.Snapshot) -> dict:
         "tagline": snap.tagline,
         "directors": snap.directors,
         "cast": snap.cast,
+        "keywords": snap.keywords,
     }
 
 
@@ -121,6 +123,7 @@ def test_details_round_trip_and_change_the_version(tmp_path):
     assert loaded.overview[i] == "A film about a cluster."
     assert loaded.directors[i] == ["Ada Director"]
     assert loaded.cast[i][0] == ["Ann Actor", "Lead"]
+    assert loaded.keywords[i] == ["time travel", "heist"]
 
 
 def test_snapshot_without_details_pads_empty(tmp_path):
@@ -140,6 +143,7 @@ def test_film_endpoint(client):
     assert f["title"] == "A00" and f["tmdb_id"] == 1000
     assert f["tagline"] == "Nothing is alone."
     assert f["directors"] == ["Ada Director"]
+    assert f["keywords"] == ["heist", "time travel"]  # equally common: by name
     assert f["cast"] == [
         {"name": "Ann Actor", "character": "Lead"},
         {"name": "Bo Actor", "character": None},
@@ -150,6 +154,7 @@ def test_film_endpoint(client):
 def test_film_without_details_still_loads(client):
     f = client.get("/film/1001").json()
     assert f["overview"] is None and f["directors"] == [] and f["cast"] == []
+    assert f["keywords"] == []
 
 
 def test_unknown_film_is_404(client):
@@ -229,3 +234,11 @@ def test_for_me_needs_something_liked_and_a_real_film(client):
     meh = films_for("A01", rating=2.0)
     assert client.post("/film/1000/for-me", json={"films": meh}).status_code == 422
     assert client.post("/film/999999/for-me", json={"films": films_for("A01")}).status_code == 404
+
+
+def test_a_film_lists_its_most_common_themes_first():
+    snap = with_details(make_snapshot())
+    for i in range(1, 6):
+        snap.keywords[i] = ["time travel"]  # now the more common of the two
+    assert snap.top_keywords(0, 5) == ["time travel", "heist"]
+    assert snap.top_keywords(0, 1) == ["time travel"]

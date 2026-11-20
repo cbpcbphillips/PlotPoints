@@ -36,10 +36,18 @@ def client(tmp_path, monkeypatch):
 
 
 def body(*facets, **extra):
+    """Each facet is (kind, value), or (kind, [values], mode) for several values of one kind."""
     films = [{"tmdb_id": 1000 + i, "rating": 4.5} for i in (0, 1, 20, 21)]
     out = {"members": [{"name": "me", "films": films}], **extra}
     if facets:
-        out["facets"] = [{"kind": k, "value": v} for k, v in facets]
+        out["facets"] = [
+            {
+                "kind": f[0],
+                "values": [f[1]] if isinstance(f[1], str) else f[1],
+                "mode": f[2] if len(f) > 2 else "all",
+            }
+            for f in facets
+        ]
     return out
 
 
@@ -113,7 +121,10 @@ def test_people_limit(client):
 
 def test_genre_page_only_has_that_genre_and_no_watched_films(client):
     r = client.post("/recommend", json=body(("genre", "comedy"), limit=20)).json()
-    assert r["facet"] == {"facets": [{"kind": "genre", "value": "Comedy"}], "total": 20}
+    assert r["facet"] == {
+        "facets": [{"kind": "genre", "values": ["Comedy"], "mode": "all"}],
+        "total": 20,
+    }
     assert r["results"] and all(x["genres"] == ["Comedy"] for x in r["results"])
     assert not {1020, 1021} & {x["tmdb_id"] for x in r["results"]}  # watched B films
 
@@ -144,7 +155,7 @@ def test_decade_director_and_actor_pages(client):
 def test_unknown_facet_is_404_and_bad_kind_422(client):
     assert client.post("/recommend", json=body(("genre", "Western"))).status_code == 404
     bad = body()
-    bad["facets"] = [{"kind": "mood", "value": "x"}]
+    bad["facets"] = [{"kind": "mood", "values": ["x"]}]
     assert client.post("/recommend", json=bad).status_code == 422
 
 
@@ -152,7 +163,7 @@ def test_facet_page_has_no_extras_and_combines_with_providers(client):
     r = client.post(
         "/recommend", json=body(("genre", "Drama"), bundle=True, branch_out=6, limit=10)
     ).json()
-    assert r["enjoyed"] is None and r["branch_out"] is None and r["beyond"] is None
+    assert r["enjoyed"] is None and r["branch_out"] is None and r["wildcard"] is None
     both = client.post(
         "/recommend", json=body(("genre", "Drama"), providers=["Netflix"], limit=50)
     ).json()
@@ -171,8 +182,8 @@ def test_masks_are_numpy_bool_arrays():
 def test_two_filters_combine_with_and(client):
     r = client.post("/recommend", json=body(("genre", "Drama"), ("era", "1990"), limit=50)).json()
     assert r["facet"]["facets"] == [
-        {"kind": "genre", "value": "Drama"},
-        {"kind": "era", "value": "1990s"},
+        {"kind": "genre", "values": ["Drama"], "mode": "all"},
+        {"kind": "era", "values": ["1990s"], "mode": "any"},
     ]
     snap = client.snap
     both = snap.facet_mask("genre", "Drama") & snap.facet_mask("era", "1990")
@@ -205,3 +216,104 @@ def test_a_filter_the_catalog_lacks_is_still_a_404_among_others(client):
     assert (
         client.post("/recommend", json=body(("genre", "Drama"), ("era", "1850"))).status_code == 404
     )
+
+
+# ------------------------------------------------------------------ several values of one kind
+
+
+def test_all_of_two_genres_means_films_that_are_both():
+    snap = decorated()  # Drama = A and C, Crime = C only
+    both = snap.facet_values_mask("genre", ["Drama", "Crime"], "all")
+    assert both.sum() == 20 and not both[:20].any() and both[40:].all()
+
+
+def test_any_of_two_genres_means_films_that_are_either():
+    snap = decorated()
+    either = snap.facet_values_mask("genre", ["Comedy", "Crime"], "any")
+    assert either.sum() == 40 and not either[:20].any()  # B and C
+
+
+def test_decades_are_always_any():
+    snap = decorated()
+    both = snap.facet_values_mask("era", ["1980", "2000"], "all")
+    assert both.sum() == 40  # "all" of two decades would be nothing, so it means either
+
+
+def test_one_value_is_the_same_in_either_mode():
+    snap = decorated()
+    assert (
+        snap.facet_values_mask("genre", ["Drama"], "all")
+        == snap.facet_values_mask("genre", ["Drama"], "any")
+    ).all()
+
+
+def test_romance_and_comedy_through_the_api(client):
+    r = client.post("/recommend", json=body(("genre", ["Drama", "Crime"], "all"), limit=50)).json()
+    assert r["facet"]["facets"] == [{"kind": "genre", "values": ["Drama", "Crime"], "mode": "all"}]
+    assert r["facet"]["total"] == 20
+    assert r["results"] and all({"Drama", "Crime"} <= set(x["genres"]) for x in r["results"])
+
+
+def test_drama_or_comedy_through_the_api(client):
+    r = client.post("/recommend", json=body(("genre", ["Comedy", "Crime"], "any"), limit=50)).json()
+    assert r["facet"]["total"] == 40
+    assert r["results"] and all({"Comedy", "Crime"} & set(x["genres"]) for x in r["results"])
+
+
+def test_one_unknown_value_among_several_is_a_404(client):
+    assert (
+        client.post("/recommend", json=body(("genre", ["Drama", "Western"], "any"))).status_code
+        == 404
+    )
+
+
+def test_too_many_values_or_a_bad_mode_is_rejected(client):
+    many = body(("genre", [f"g{i}" for i in range(9)]))
+    assert client.post("/recommend", json=many).status_code == 422
+    bad = body(("genre", ["Drama"]))
+    bad["facets"][0]["mode"] = "some"
+    assert client.post("/recommend", json=bad).status_code == 422
+    empty = body(("genre", []))
+    assert client.post("/recommend", json=empty).status_code == 422
+
+
+# ------------------------------------------------------------------ keywords
+
+
+def with_keywords(snap):
+    for i in range(0, 20):
+        snap.keywords[i] = ["time travel", "heist"] if i % 2 == 0 else ["time travel"]
+    for i in range(40, 50):
+        snap.keywords[i] = ["heist"]
+    return snap
+
+
+def test_keyword_mask_and_modes():
+    snap = with_keywords(decorated())
+    assert snap.facet_mask("keyword", "Time Travel").sum() == 20
+    both = snap.facet_values_mask("keyword", ["time travel", "heist"], "all")
+    assert both.sum() == 10
+    either = snap.facet_values_mask("keyword", ["time travel", "heist"], "any")
+    assert either.sum() == 30
+    assert snap.facet_name("keyword", "HEIST") == "heist"
+
+
+def test_keywords_endpoint_counts_and_searches(client):
+    with_keywords(client.snap)
+    r = client.get("/keywords").json()["keywords"]
+    assert {(k["name"], k["count"]) for k in r} == {("heist", 20), ("time travel", 20)}
+    assert r[0]["name"] == "heist"  # equal counts sort by name
+    hit = client.get("/keywords", params={"q": "heis"}).json()["keywords"]
+    assert [k["name"] for k in hit] == ["heist"]
+
+
+def test_keyword_page_through_the_api(client):
+    with_keywords(client.snap)
+    r = client.post("/recommend", json=body(("keyword", "heist"), limit=50)).json()
+    assert r["facet"]["total"] == 20
+    ids = {x["tmdb_id"] for x in r["results"]}
+    assert ids and ids <= {1000 + i for i in [*range(0, 20, 2), *range(40, 50)]}
+    both = client.post(
+        "/recommend", json=body(("keyword", ["heist", "time travel"], "all"), limit=50)
+    ).json()
+    assert both["facet"]["total"] == 10

@@ -239,8 +239,9 @@ def test_results_carry_the_ranking_score_and_a_novelty_standin(client):
 
 def test_enjoyed_row_only_on_the_first_unfiltered_page(client):
     r = client.post("/recommend", json=body(1000, 1001, 1020, limit=20)).json()
-    assert r["enjoyed"] and len(r["enjoyed"]) <= 6
-    assert {"tmdb_id", "title", "rating", "avg_match"} <= set(r["enjoyed"][0])
+    assert r["enjoyed"] and len(r["enjoyed"]) <= 12
+    assert {"tmdb_id", "title", "rating", "behind", "of"} <= set(r["enjoyed"][0])
+    assert all(0 <= e["behind"] <= e["of"] for e in r["enjoyed"])
     assert {e["tmdb_id"] for e in r["enjoyed"]} <= {1000, 1001, 1020}
     assert client.post("/recommend", json=body(1000, offset=5)).json()["enjoyed"] is None
     assert (
@@ -409,3 +410,11 @@ def test_franchise_shelf_lists_every_unseen_film_not_only_the_top_of_the_ranking
     assert len(full) == full_count == 8
     assert shallow == full  # nothing missing, nothing re-scored
     assert shallow_count == 8
+
+
+def test_enjoyed_says_how_many_of_the_top_picks_each_liked_film_is_behind(client):
+    r = client.post("/recommend", json=body(1000, 1001, 1020, bundle=True, limit=10)).json()
+    enjoyed = r["enjoyed"]
+    assert enjoyed and all(e["of"] <= 50 for e in enjoyed)
+    assert any(e["behind"] > 0 for e in enjoyed)  # at least one film is a named reason somewhere
+    assert enjoyed[0]["behind"] >= 1  # the one pulling hardest is behind at least one pick

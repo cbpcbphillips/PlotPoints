@@ -18,7 +18,8 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [username, setUsername] = useState('')
-  const [keep, setKeep] = useState(false)
+  // On by default; the person can untick it. What is kept is anonymous (see the consent call below).
+  const [keep, setKeep] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -56,7 +57,8 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
         source = 'username'
       }
       const films: Film[] = outcome.films
-      if (!films.length && !outcome.missing.length) throw new Error('No films found in that import.')
+      if (!films.length && !outcome.missing.length)
+        throw new Error('No films found in that import.')
 
       let merged = films
       if (adding && profile) {
@@ -64,7 +66,8 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
         for (const f of films) byId.set(f.tmdb_id, f)
         merged = [...byId.values()]
       }
-      const missing = adding && profile ? mergeMissing(profile.missing ?? [], outcome.missing) : outcome.missing
+      const missing =
+        adding && profile ? mergeMissing(profile.missing ?? [], outcome.missing) : outcome.missing
       const notYet = new Set(missing.filter((m) => m.tmdb_id != null).map((m) => m.tmdb_id))
 
       let consentedAt = adding ? profile?.consentedAt : undefined
@@ -72,7 +75,7 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
       if (keep) {
         const stored = await api.consent({
           source: source === 'export' ? 'letterboxd-export' : 'letterboxd-username',
-          username: source === 'username' ? name : undefined,
+          // never the Letterboxd username: ratings are kept anonymously, so nothing links them back
           films: merged,
         })
         consentedAt = new Date().toISOString()
@@ -192,14 +195,21 @@ export function ImportForm({ mode = 'replace' }: { mode?: 'replace' | 'add' }) {
           onChange={(e) => setKeep(e.target.checked)}
           className="mt-[3px] h-[22px] w-[22px] flex-none accent-[var(--accent)]"
         />
-        <label htmlFor="lb-keep" className="text-[0.9375rem] leading-[1.45] lg:text-[1.0625rem] lg:leading-[1.5]">
-          Let PlotPoints keep my imported ratings to improve the project. I can ask to delete them at
-          any time.
+        <label
+          htmlFor="lb-keep"
+          className="text-[0.9375rem] leading-[1.45] lg:text-[1.0625rem] lg:leading-[1.5]"
+        >
+          Keep my ratings, anonymously, to help improve PlotPoints. You can untick this, or delete
+          them any time from the Privacy page.
         </label>
       </div>
 
       {error && (
-        <div id="lb-error" role="alert" className="rounded-[10px] border border-field px-4 py-3 text-base">
+        <div
+          id="lb-error"
+          role="alert"
+          className="rounded-[10px] border border-field px-4 py-3 text-base"
+        >
           {error}
         </div>
       )}
