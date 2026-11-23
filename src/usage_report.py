@@ -48,6 +48,8 @@ def parse(lines) -> dict[str, Day]:
         access = ACCESS.search(line)
         if access:
             _, route, status, ms = access.groups()
+            if route == "/health":  # the keep-warm ping and platform health checks, not visitors
+                continue
             day.requests += 1
             day.routes[route] += 1
             if status.startswith("5"):

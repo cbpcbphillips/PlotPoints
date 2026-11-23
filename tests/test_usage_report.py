@@ -21,7 +21,7 @@ LOG = """\
 2026-11-20 10:05:00,000 INFO plotpoints.api GET /film/{tmdb_id} 200 5ms
 2026-11-20 10:05:01,000 INFO plotpoints.api GET /film/{tmdb_id} 404 4ms
 2026-11-20 10:06:00,000 INFO plotpoints.api POST /recommend 500 9ms
-2026-11-21 09:00:00,000 INFO plotpoints.api GET /health 200 1ms
+2026-11-21 09:00:00,000 INFO plotpoints.api GET /meta 200 1ms
 snapshot 5b07b4a5e390 loaded: 28555 titles
 not a log line at all
 """
@@ -65,3 +65,13 @@ def test_the_rendered_report_is_readable_and_has_no_identifiers():
 
 def test_empty_input_says_so():
     assert "No log lines" in ur.render(ur.parse([]))
+
+
+def test_health_checks_are_not_counted_as_traffic():
+    lines = [
+        "2026-11-20 10:00:00,000 INFO plotpoints.api GET /health 200 1ms",
+        "2026-11-20 10:08:00,000 INFO plotpoints.api GET /health 200 1ms",
+        "2026-11-20 10:09:00,000 INFO plotpoints.api GET /meta 200 3ms",
+    ]
+    day = ur.parse(lines)["2026-11-20"]
+    assert day.requests == 1 and "/health" not in day.routes

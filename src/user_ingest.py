@@ -67,14 +67,28 @@ def land() -> dict:
 
 
 def apply_deletions() -> int:
-    """Delete imports whose token hash has a deletion request. Returns rows removed."""
+    """Delete imports whose token hash has a deletion request. Returns rows removed.
+
+    The import's raw file in the S3 inbox goes too, and first: `purge` only removes files that are
+    recorded in RAW, so once the row is gone nothing else would ever clear that file. Doing S3
+    first means a failure leaves the row in place and the next run tries again.
+    """
     with get_snowflake_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"select source_file from {_qualified('USER_IMPORTS')} where token_hash in "
+            f"(select token_hash from {_qualified('USER_DELETIONS')})"
+        )
+        files = {r[0].lstrip("/") for r in cur.fetchall() if r[0]}
+        if files:
+            s3, bucket = get_s3_client(), require_env("AWS_S3_BUCKET")
+            for key in files:
+                s3.delete_object(Bucket=bucket, Key=key)  # a key that is already gone is fine
         cur.execute(
             f"delete from {_qualified('USER_IMPORTS')} where token_hash in "
             f"(select token_hash from {_qualified('USER_DELETIONS')})"
         )
         removed = cur.fetchone()[0]
-    print(f"Deleted {removed} import(s) with a deletion request")
+    print(f"Deleted {removed} import(s) with a deletion request ({len(files)} inbox file(s))")
     return removed
 
 

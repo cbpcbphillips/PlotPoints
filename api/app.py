@@ -18,6 +18,7 @@ from typing import Literal
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 import scoring
 import snapshot
@@ -59,6 +60,32 @@ MAX_SIMILAR = 24  # "more like this" is a row, not a list
 CLOSEST_SHOWN = 5  # liked films named on a film page as closest to it
 BUNDLE_LISTED = 8  # films of a bundled series named in the response, in rank order
 
+# Per-client limits, per minute, per instance. Generous for a person clicking around (the Streaming
+# page asks once per service they pick) and far below a script. See RateLimiter.
+RECOMMEND_PER_MIN = 120
+FRANCHISES_PER_MIN = 60
+FILM_FOR_ME_PER_MIN = 120
+PROFILE_PER_MIN = 60
+
+# Public, personal-data-free GETs that are the same for everybody until the snapshot changes. They
+# are cached by browsers and by an edge cache in front (Cloudflare) so repeat views never reach us.
+CACHEABLE_ROUTES = frozenset(
+    {"/meta", "/facets", "/keywords", "/people", "/film/{tmdb_id}", "/film/{tmdb_id}/similar"}
+)
+CACHE_SECONDS = 3600  # default; PLOTPOINTS_CACHE_SECONDS=0 turns caching off (local development)
+
+# Largest request body accepted. The biggest honest one is a six-person group of 20,000-film
+# histories (about 9 MB of JSON); anything bigger is refused before it is read and parsed, so one
+# oversized request cannot eat an instance's memory.
+MAX_BODY_BYTES = 12_000_000
+
+
+def cache_control(seconds: int) -> str:
+    return f"public, max-age={seconds}, stale-while-revalidate=86400" if seconds > 0 else "no-cache"
+
+
+CACHE_CONTROL = cache_control(CACHE_SECONDS)
+
 
 class RateLimiter:
     """Sliding-window limit per (client, bucket). In-memory, so per instance: a brake against a
@@ -75,6 +102,22 @@ class RateLimiter:
         if len(q) >= limit:
             raise HTTPException(429, "Too many requests. Wait a minute and try again.")
         q.append(now)
+
+
+def client_ip(forwarded_for: str | None, peer: str | None, proxies: int = 1) -> str:
+    """Who is calling, for rate limits, without trusting what the caller says about themselves.
+
+    Behind a proxy the client's own `X-Forwarded-For` can carry any entries it likes, and each proxy
+    appends one more to the END. So only the entries at the end are real: the last one was added by
+    the nearest proxy (the platform's front end, `proxies` = 1), the one before it by the proxy in
+    front of that (Cloudflare, `proxies` = 2), and the address we want is the first the outermost
+    trusted proxy saw. Taking `proxies` entries from the end, the first of those is it. No header
+    (local development) means the direct peer.
+    """
+    parts = [p.strip() for p in (forwarded_for or "").split(",") if p.strip()]
+    if not parts:
+        return peer or "?"
+    return parts[-proxies] if len(parts) >= proxies else parts[0]
 
 
 def snapshot_dir() -> Path:
@@ -109,7 +152,17 @@ def create_app(
         ]
         yield
 
-    app = FastAPI(title="PlotPoints API", version="1.0.0", lifespan=lifespan)
+    # The interactive docs and schema are for development (PLOTPOINTS_DOCS=1); a public service has
+    # no reason to hand out a map of every route.
+    docs = os.environ.get("PLOTPOINTS_DOCS") == "1"
+    app = FastAPI(
+        title="PlotPoints API",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
     origins = [
         o.strip()
         for o in os.environ.get("PLOTPOINTS_CORS_ORIGINS", "http://localhost:5173").split(",")
@@ -121,6 +174,28 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    @app.middleware("http")
+    async def cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        route = request.scope.get("route")
+        if (
+            request.method == "GET"
+            and response.status_code == 200
+            and getattr(route, "path", None) in CACHEABLE_ROUTES
+        ):
+            response.headers["Cache-Control"] = cache_header
+        return response
+
+    @app.middleware("http")
+    async def body_limit(request: Request, call_next):
+        try:
+            size = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            size = MAX_BODY_BYTES + 1
+        if size > MAX_BODY_BYTES:
+            return JSONResponse({"detail": "That request is too large."}, status_code=413)
+        return await call_next(request)
 
     @app.middleware("http")
     async def access_log(request: Request, call_next):
@@ -141,11 +216,12 @@ def create_app(
                 (time.perf_counter() - started) * 1000,
             )
 
+    proxies = max(1, int(os.environ.get("PLOTPOINTS_TRUSTED_PROXIES", "1") or 1))
+    cache_header = cache_control(int(os.environ.get("PLOTPOINTS_CACHE_SECONDS", CACHE_SECONDS)))
+
     def client_of(request: Request) -> str:
-        fwd = request.headers.get("x-forwarded-for")
-        return (
-            fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
-        )
+        peer = request.client.host if request.client else None
+        return client_ip(request.headers.get("x-forwarded-for"), peer, proxies)
 
     # ---------------------------------------------------------------- helpers
 
@@ -460,6 +536,7 @@ def create_app(
         with nothing rated above 3 stars gets the same 422 as /recommend, which the page treats as
         "nothing to show".
         """
+        limiter.check(client_of(request), "for_me", limit=FILM_FOR_ME_PER_MIN)
         s = request.app.state.snap
         i = movie_index(s, tmdb_id)
         req = RecommendRequest(members=[Member(name="me", films=body.films)])
@@ -601,6 +678,7 @@ def create_app(
 
     @app.post("/recommend")
     def recommend(body: RecommendRequest, request: Request):
+        limiter.check(client_of(request), "recommend", limit=RECOMMEND_PER_MIN)
         s = request.app.state.snap
         if body.offset + body.limit > MAX_POOL:
             raise HTTPException(422, f"offset + limit may not exceed {MAX_POOL}.")
@@ -716,6 +794,7 @@ def create_app(
 
     @app.post("/franchises")
     def franchises(body: RecommendRequest, request: Request):
+        limiter.check(client_of(request), "franchises", limit=FRANCHISES_PER_MIN)
         s = request.app.state.snap
         profiles, info, reasons = to_profiles(s, body)
         results = scoring.rank(
@@ -744,6 +823,7 @@ def create_app(
 
     @app.post("/profile")
     def profile(body: ProfileRequest, request: Request):
+        limiter.check(client_of(request), "profile", limit=PROFILE_PER_MIN)
         return profile_stats(request.app.state.snap, [f.model_dump() for f in body.films])
 
     @app.post("/consent")

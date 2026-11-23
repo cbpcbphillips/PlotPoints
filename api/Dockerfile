@@ -29,4 +29,6 @@ USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health')"
 # $PORT is how Cloud Run and Render tell a container which port to listen on.
-CMD ["sh", "-c", "exec uvicorn api.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+# --no-access-log: uvicorn's own access line prints the raw path and query string (film numbers,
+# search text). The app writes its own line per request with the route template only (api/app.py).
+CMD ["sh", "-c", "exec uvicorn api.app:create_app --factory --no-access-log --host 0.0.0.0 --port ${PORT:-8000}"]

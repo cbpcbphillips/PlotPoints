@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { clearSavedList } from './savedLists'
 import type { Film, MissingFilm } from './types'
 
 /**
@@ -37,7 +38,10 @@ function read(): Profile | null {
 function write(p: Profile | null) {
   try {
     if (p) localStorage.setItem(KEY, JSON.stringify(p))
-    else localStorage.removeItem(KEY)
+    else {
+      localStorage.removeItem(KEY)
+      clearSavedList() // the saved recommendations belong to the profile and go with it
+    }
   } catch {
     /* storage can be blocked (private windows); the session still works in memory */
   }

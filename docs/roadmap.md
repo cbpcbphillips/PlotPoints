@@ -337,11 +337,35 @@ link (`VITE_FEEDBACK_URL`), link-preview tags, a phone navigation with a "More" 
 the server" message, consent on by default and anonymous, a Privacy "Visit counts" paragraph that
 appears with `VITE_ANALYTICS=true`, `just test-inbox` to prove the AWS key's permissions, and the
 IAM policy files in `docs/iam/`.
+Also done (2026-11-20, second pass): cache headers on the public GETs, per-caller rate limits with
+a client address that cannot be forged, a saved last-list in the browser, `just status` (live
+health checks), `just dashboard` (a private local page from the anonymous API log), and
+`just deploy-api` / `just deploy-web` scripts (run only in `-DryRun` so far). Not done: any cloud
+account, the domain, the deploy itself.
 
-Decided: **Cloud Run** (scale to zero, 1 GB, at most 3 instances, a $5 budget alert) for the API;
-**Cloudflare Pages** for the frontend; Cloudflare Web Analytics for visits; the S3 inbox for
-consented imports; a monthly snapshot refresh by hand. The step-by-step runbook, with the exact
-commands, is [deploy.md](deploy.md); the AWS steps are `external_setup.md` section 5b.
+Decided: **Cloud Run** (scale to zero, 1 GB, at most 3 instances, a $5 budget alert, plus a free
+keep-warm ping) for the API; **Cloudflare Pages** for the frontend; Cloudflare Web Analytics for
+visits; the S3 inbox for consented imports; a monthly snapshot refresh by hand. The step-by-step
+runbook, with the exact commands, is [deploy.md](deploy.md); the AWS steps are
+`external_setup.md` section 5b.
+
+*Why these hosts (2026-11-20).* Priorities, in Carson's order: long-term viability, free, easy setup
+and maintenance, the best free option for all users now, with migration later if needed. Both are
+managed services with nothing to patch: the frontend is static files on Cloudflare (unmetered static
+bandwidth on the free plan, commercial use allowed, so no migration when ads arrive; the domain,
+DNS, HTTPS, DDoS protection and analytics sit in the same place), and the API is a stateless
+container on Cloud Run (a free tier of 2M requests and 180,000 vCPU-seconds a month, far above
+friends' traffic, capped by `--max-instances`). Considered and passed over: Vercel Hobby (bars
+revenue-generating use, so a later migration), Render (free tier too small and it sleeps; Standard
+is $25 a month), Fly.io and Railway (cheap but usage-billed and changing), a Hetzner VPS (cheapest
+always-on, but you patch and run it yourself) and Cloudflare Containers (new tooling, small
+default CPU). The stack is portable: the API is one Docker image that honours `$PORT`, the
+frontend is a static build, and nothing is stored on either host.
+
+*Revisit when:* first-visit waits still bother people after the keep-warm ping (then pay for
+`--min-instances 1`, move the API to Render Standard, or a small VPS), the free tier is exceeded
+(the budget alert says so), or Cloudflare retires the Pages path used in the runbook (Pages and
+Workers have been merging; check its dashboard's recommended deploy command first).
 
 Carson's list, in order (consoles, accounts and files only he can provide):
 
@@ -349,7 +373,8 @@ Carson's list, in order (consoles, accounts and files only he can provide):
        `just test-inbox --write` until every line passes, then one real consent -> `user-ingest`
        -> delete round trip. Optional S3 lifecycle rule. Do this before inviting anyone.
 2. [ ] **Accounts**: Google Cloud project with billing (and the $5 budget alert), Cloudflare, and
-       the domain (about $12-15 a year; at Cloudflare Registrar it is sold at cost).
+       the domain (see "The domain" below: buy at Cloudflare Registrar, about $10-12 a year).
+       Install the Google Cloud CLI (`winget install Google.CloudSDK`, then `gcloud auth login`).
 3. [ ] **TMDB logo**: download from TMDB's brand assets, save as `web/public/tmdb.svg`.
 4. [ ] **Deploy the API** (deploy.md section 3), then **publish the frontend** (section 4) with
        `VITE_API_URL`, optional `VITE_FEEDBACK_URL`, and later `VITE_ANALYTICS=true`.
@@ -359,6 +384,39 @@ Carson's list, in order (consoles, accounts and files only he can provide):
 7. [ ] `just airflow-restart` so the Airflow image picks up the `src/` changes (not needed for the
        API).
 8. [ ] Optional: a 1200x630 preview image and `og:image` / `twitter:image` tags.
+
+#### The domain (researched 2026-11-20)
+
+**Chosen: `watchplotpoints.com`** (Carson, 2026-11-20). A registry lookup and DNS check found it
+unregistered that day (confirm at checkout). A quick web search found no product called
+PlotPoints, but several similarly named film apps (PlotSense, Plot, Plot Snippets): not a legal
+clearance. After buying, set `PLOTPOINTS_SITE_URL=https://watchplotpoints.com` and
+`PLOTPOINTS_CORS_ORIGINS=https://watchplotpoints.com,https://www.watchplotpoints.com,https://watchplotpoints.pages.dev`
+in `.env`.
+
+Prices below come from third-party comparison pages that disagree by a dollar or two, so confirm
+the number at checkout.
+
+| Registrar | .com per year | Notes |
+|---|---|---|
+| **Cloudflare Registrar** | about $10.4-10.5 (one source: $8.57) | At wholesale cost, no markup; the renewal price equals the first-year price; free WHOIS privacy; DNS, HTTPS and Pages in the same dashboard |
+| Spaceship | about $9.98 | Most often listed as the cheapest .com |
+| Dynadot / Porkbun | about $10.9-11 | Fine, no advantage over Cloudflare for this setup |
+| Namecheap | cheap first year, then about $14-18 | Judge by the renewal price, not the promo |
+
+Other endings at Cloudflare: `.dev` about $10-12, `.app` about $11-14, `.io` about $29-45 (not worth
+it). **Recommendation: buy at Cloudflare.** The cheapest rival saves about a dollar a year, and
+having the domain, DNS, the site and the analytics in one place is worth more than that. A new
+registration is locked against transfer for 60 days (a rule for everyone).
+
+**Names.** A public registry lookup (RDAP) on 2026-11-20 found `plotpoints.com`, `plotpoints.app`
+and `plotpoints.xyz` already registered, and **no registration** for `plotpoints.dev`,
+`plotpoints.io`, `plotpoints.co`, `plotpoints.film`, `plotpoints.watch`, `plotpoints.movie`,
+`getplotpoints.com`, `tryplotpoints.com` and `plotpointsapp.com`. "Not found" is a strong hint, not
+a guarantee: the registrar's search at checkout is the real answer. `plotpoints.dev` (about
+$10-12, HTTPS-only, reads as a project) and `getplotpoints.com` (a familiar `.com`) are the two I
+would look at first. Someone owns `plotpoints.com`, so do a quick web search for other products
+called PlotPoints before building a following on the name.
 
 Measuring demand (what step 2 rests on): Cloudflare Analytics gives visits, countries and devices.
 The API log gives the rest: since 2026-11-20 it writes anonymous, count-only event lines (a list for

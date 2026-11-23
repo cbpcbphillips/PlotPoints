@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { Shell, TmdbMark } from '../components/Shell'
 import { PageTitle } from '../components/States'
 import { api } from '../lib/api'
-import { ANALYTICS_ON } from '../lib/env'
+import { ANALYTICS_ON, FEEDBACK_URL } from '../lib/env'
 import { prettyDate } from '../lib/format'
 import { useProfile } from '../lib/profile'
 
@@ -155,6 +155,12 @@ export function Privacy() {
           the log cannot say who did anything. It is used to see whether PlotPoints is useful and
           whether it is running well.
         </p>
+        <p className="m-0">
+          The company that hosts the server (Google Cloud) also keeps its own standard record of
+          each request for about 30 days, as any web host does. It includes the address that was
+          asked for, so a film page&rsquo;s number appears in it. PlotPoints does not use that
+          record for anything beyond fixing faults.
+        </p>
       </Block>
       {ANALYTICS_ON && (
         <Block title="Visit counts">
@@ -162,6 +168,15 @@ export function Privacy() {
             Visits are counted with Cloudflare Web Analytics. It sets no cookies and does not follow
             you from site to site; it sees which page was opened, the country and the kind of
             device, not who you are.
+          </p>
+        </Block>
+      )}
+      {FEEDBACK_URL && (
+        <Block title="Feedback">
+          <p className="m-0">
+            The feedback form is hosted by Google Forms. It keeps only what you type into it. It
+            does not ask you to sign in, and an email address is stored only if you choose to
+            leave one so you can get a reply. It is not linked to your films or ratings.
           </p>
         </Block>
       )}

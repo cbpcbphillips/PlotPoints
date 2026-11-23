@@ -67,7 +67,7 @@ The container must allow the preview origin: run it with
 
 | Where | Variable | Value |
 |---|---|---|
-| API | `PLOTPOINTS_CORS_ORIGINS` | the deployed frontend origin(s), comma-separated, e.g. `https://plotpoints.pages.dev,https://yourdomain.com` |
+| API | `PLOTPOINTS_CORS_ORIGINS` | the deployed frontend origin(s), comma-separated, e.g. `https://watchplotpoints.pages.dev,https://watchplotpoints.com,https://www.watchplotpoints.com` |
 | API | `PLOTPOINTS_INBOX` | `s3` on the host (the image defaults to `local`, which an ephemeral disk loses on restart) |
 | API | `INBOX_AWS_ACCESS_KEY_ID`, `INBOX_AWS_SECRET_ACCESS_KEY` | the put-only key from `external_setup.md` section 5b. **Secrets**, not plain env vars |
 | API | `AWS_S3_BUCKET`, `AWS_REGION` | the bucket name and its region |
@@ -84,6 +84,9 @@ The image listens on `$PORT`, is stateless, and loads its snapshot at start-up. 
 and ~380 MB of memory.** Cloud Run adds an image pull and a slower, shared CPU, so expect a first
 visit after idle to take roughly 5-10 seconds (an estimate: time it on the real service). The app
 shows "Waking up the server" after 3.5 s. Pay for `--min-instances 1` only if that annoys people.
+
+*Shortcut:* `just deploy-api` runs the steps below from your `.env` settings (section 10; add
+`-DryRun` to preview). The commands are kept here so you can see, and run, each one yourself.
 
 ### Cloud Run, step by step (PowerShell)
 
@@ -106,7 +109,10 @@ docker tag plotpoints-api $IMG
 docker push $IMG
 ```
 
-2. **Secrets** (paste each value when prompted; nothing lands in your shell history or the repo):
+2. **Secrets.** *Shortcut:* with the values already in `.env`, `just gcp-secrets -DryRun` lists what it
+   will do (names only) and `just gcp-secrets` stores them in Secret Manager and lets the Cloud Run
+   service account read exactly those three. Or by hand (paste each value when prompted; nothing
+   lands in your shell history or the repo):
 
 ```powershell
 foreach ($name in "inbox-access-key-id", "inbox-secret-access-key", "tmdb-api-key") {
@@ -119,25 +125,52 @@ foreach ($name in "inbox-access-key-id", "inbox-secret-access-key", "tmdb-api-ke
    Then let the service read them:
    `gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$(gcloud projects describe $PROJECT --format='value(projectNumber)')-compute@developer.gserviceaccount.com" --role=roles/secretmanager.secretAccessor`
 
-3. **Deploy**, with a hard ceiling on instances so a traffic spike cannot become a surprise bill:
+3. **Deploy**, with a hard ceiling on instances so a traffic spike cannot become a surprise bill.
+   *Shortcut:* `just deploy-api` does this step (and the build and push) for you. By hand, put the
+   plain settings in a small file, because `gcloud.cmd` runs through `cmd.exe`, which mangles `|` and
+   `^` in a command-line value, and the CORS value contains commas:
 
 ```powershell
-gcloud run deploy plotpoints-api --image $IMG --region $REGION --allow-unauthenticated `
+@"
+PLOTPOINTS_INBOX: "s3"
+AWS_S3_BUCKET: "$BUCKET"
+AWS_REGION: "us-east-1"
+PLOTPOINTS_CORS_ORIGINS: "https://watchplotpoints.pages.dev,https://watchplotpoints.com,https://www.watchplotpoints.com"
+PLOTPOINTS_TRUSTED_PROXIES: "1"
+"@ | Set-Content -Encoding ascii env.yaml
+gcloud.cmd run deploy plotpoints-api --image $IMG --region $REGION --allow-unauthenticated `
   --cpu 1 --memory 1Gi --cpu-boost --concurrency 20 --timeout 60 `
-  --min-instances 0 --max-instances 3 `
-  --set-env-vars "^|^PLOTPOINTS_INBOX=s3|AWS_S3_BUCKET=$BUCKET|AWS_REGION=us-east-1|PLOTPOINTS_CORS_ORIGINS=https://plotpoints.pages.dev,https://yourdomain.com" `
+  --min-instances 0 --max-instances 2 --env-vars-file env.yaml `
   --set-secrets "INBOX_AWS_ACCESS_KEY_ID=inbox-access-key-id:latest,INBOX_AWS_SECRET_ACCESS_KEY=inbox-secret-access-key:latest,TMDB_API_KEY=tmdb-api-key:latest"
+Remove-Item env.yaml
 ```
 
    It prints the service URL (`https://plotpoints-api-....run.app`): that is `VITE_API_URL`. Change
-   `AWS_REGION` to your bucket's region and the CORS origins to your real frontend addresses. The
-   `^|^` at the start of the variables switches gcloud's separator from a comma to `|`, because the
-   CORS value itself contains commas. To change one later:
-   `gcloud run services update plotpoints-api --update-env-vars "^|^PLOTPOINTS_CORS_ORIGINS=https://a,https://b"`.
+   `AWS_REGION` to your bucket's region and the CORS origins to your real frontend addresses. To
+   change one value later, edit the file and deploy again, or:
+   `gcloud.cmd run services update plotpoints-api --update-env-vars PLOTPOINTS_TRUSTED_PROXIES=2`
+   (one value without commas needs no file).
 
 4. **A budget alert** (console: Billing -> Budgets & alerts -> create a $5 monthly budget with email
    alerts at 50% and 100%). At friends' traffic the service should cost $0; the alert tells you if
    that stops being true.
+
+5. **Keep it warm** (so a friend's first visit rarely waits for a cold start). Cloud Run keeps an idle
+   instance for a while after its last request and bills only while a request is being handled, so a
+   ping every few minutes keeps one ready at almost no cost. Cloud Scheduler's free allowance covers
+   one job:
+
+```powershell
+gcloud services enable cloudscheduler.googleapis.com
+$URL = gcloud run services describe plotpoints-api --region $REGION --format "value(status.url)"
+gcloud scheduler jobs create http plotpoints-warm --location $REGION `
+  --schedule "*/8 * * * *" --uri "$URL/health" --http-method GET
+```
+
+   Google does not promise an instance survives, so an occasional cold start can still happen; time
+   a visit after an hour of quiet to see how it behaves. The pings appear in the log as
+   `GET /health`; `just usage` leaves them out. If the wait is still too long, set
+   `--min-instances 1` (a small steady cost) or move to an always-on host (see the roadmap).
 
 ### Render instead
 
@@ -150,6 +183,11 @@ are too small for a ~380 MB process, and the free tier sleeps after 15 minutes.
 Single-page app: `web/public/_redirects` already sends every path to `index.html`, so a refresh on
 `/film/603` works.
 
+*Check first:* Cloudflare has been merging Pages into Workers. Before running the commands below,
+look at what the dashboard offers for a new static site (Workers & Pages -> Create) and use the
+deploy command it shows if it differs from `wrangler pages deploy`; the build output (`web/dist`)
+and the environment variables are the same either way.
+
 **Without connecting GitHub (simplest; nothing unfinished gets published):**
 
 ```powershell
@@ -157,11 +195,11 @@ cd web
 $env:VITE_API_URL = "https://plotpoints-api-XXXX.run.app"   # the Cloud Run URL
 $env:VITE_FEEDBACK_URL = "mailto:you@example.com"            # optional
 npm run build
-npx wrangler pages deploy dist --project-name plotpoints
+npx wrangler pages deploy dist --project-name watchplotpoints
 ```
 
 The first run opens a browser to sign in to Cloudflare. Your site is then at
-`https://plotpoints.pages.dev` (use that as the first CORS origin).
+`https://watchplotpoints.pages.dev` (use that as the first CORS origin).
 
 **Or connect the repository** (deploys on every push): Pages -> Create project -> connect GitHub ->
 root directory `web`, build command `npm run build`, output `dist`, and the `VITE_*` variables from
@@ -183,6 +221,11 @@ the warehouse.
 
 ## 6. Smoke checklist after deploy
 
+- [ ] Security headers on the site (`curl.exe -I https://watchplotpoints.com/`): a `content-security-policy`,
+      `x-frame-options: DENY` and HSTS. If the API address changes, update `connect-src` in
+      `web/public/_headers` (see `docs/security.md`)
+- [ ] `/docs` and `/openapi.json` on the API answer 404
+
 - [ ] `GET /health` and `/meta` report the expected snapshot version and title count
 - [ ] Landing page loads; importing a Letterboxd export returns recommendations
 - [ ] A recommendation links to `/film/<id>`; refreshing that URL still loads the page
@@ -192,11 +235,10 @@ the warehouse.
       usernames or tokens
 - [ ] About page carries the TMDB sentence and logo, and the JustWatch attribution- [ ] On the live site: import with the consent box ticked, then use Privacy -> "Delete with token";
       on your machine `just user-ingest` lands and then removes it (see `external_setup.md` 5b, step 5)
-- [ ] `just test-inbox --write` still PASSes against the key the live service uses- [ ] Rate limits: `client_of` in `api/app.py` keys on the *first* `X-Forwarded-For` entry. Behind
-      Cloud Run or Render a caller can add their own header and dodge the per-IP limits on
-      `/import/letterboxd`, `/consent` and `/match`. At friends' scale that is harmless; before a wider
-      launch, look at what the platform puts in that header on the live service and key on the
-      entry the platform adds (the last one, with a single proxy).
+- [ ] `just test-inbox --write` still PASSes against the key the live service uses- [ ] Rate limits: from your own machine, send about 130 `POST /recommend` requests in a minute and
+      confirm the last few get a 429; then check `PLOTPOINTS_TRUSTED_PROXIES` matches your setup (1
+      for Cloud Run alone, 2 behind Cloudflare). If every visitor shares one limit, the wrong header
+      entry is being read.
 - [ ] The API starts with `PLOTPOINTS_INBOX=s3` only if both `INBOX_AWS_*` secrets and
       `AWS_S3_BUCKET` are set: a missing one stops the container at start-up with a message naming
       it (check `gcloud run services logs read`)
@@ -224,3 +266,70 @@ gcloud run services logs read plotpoints-api --region $REGION --limit 20000 | ju
   people, because nothing in the log could tell them apart; that is the price of keeping the log
   anonymous, and Cloudflare covers visits.
   Cloud Run keeps request logs for 30 days by default, so pull them at least monthly.
+
+## 8. Already built into the app (so you do not have to)
+
+- **Cache headers.** The public, same-for-everyone GETs (`/meta`, `/facets`, `/keywords`, `/people`,
+  `/film/{id}`, `/film/{id}/similar`) carry `Cache-Control: public, max-age=3600`, so browsers and
+  Cloudflare serve repeat views without reaching the API. 404s, POSTs and `/health` are never cached.
+  `just api` turns this off locally (`PLOTPOINTS_CACHE_SECONDS=0`) so you always see fresh data. After
+  a monthly data refresh, people may see the old snapshot for up to an hour.
+- **Per-caller limits** (per minute, per instance): `/recommend` 120, `/franchises` 60,
+  `/film/{id}/for-me` 120, `/profile` 60, plus the existing ones on Letterboxd imports, `/match`,
+  `/consent` and `/delete`. The caller is read from the *end* of `X-Forwarded-For`, which a caller
+  cannot forge; `PLOTPOINTS_TRUSTED_PROXIES` says how many proxies add to that header (1 for Cloud Run
+  alone, the default; 2 once Cloudflare proxies the API in front of it).
+- **A cost ceiling.** `--max-instances 2` caps the compute that can ever run at once. A Google budget
+  alert warns but does **not** stop spending, so that cap is what keeps a flood from becoming a
+  surprise bill.
+- **Saved recommendations.** A returning visitor's last list is kept in their browser and shown at
+  once while a fresh one loads, which also hides a cold start. It goes when the profile does.
+
+## 9. Watching it: uptime, traffic, alerts
+
+The full guide to reading the dashboard is in `docs/dashboard.md`; the security review and the
+site's headers are in `docs/security.md`.
+
+Three layers, all free at this scale:
+
+1. **Google Cloud Monitoring uptime check** (alerts you by email if the API stops answering).
+   Console -> Monitoring -> Uptime checks -> Create: protocol HTTPS, host = the Cloud Run URL without
+   `https://`, path `/health`, every 5 to 15 minutes. Then Create alert -> notify your email. (A free
+   outside monitor such as UptimeRobot works too, and keeps working if Google is the thing that is
+   down.) Do the same for the site's address if you like.
+2. **Cloudflare Web Analytics** for visits, countries and devices, and Cloudflare's own dashboard for
+   cache hits and blocked traffic.
+3. **Your own commands**, which read the live site without anyone logging in anywhere:
+
+```powershell
+just status                              # PASS/WARN/FAIL: API up, data version, cache headers, CORS,
+                                         # the site loads, deep links work, certificates have time left
+just usage < api.log                     # daily numbers from a saved log
+just dashboard --gcloud --status --open  # pull the live log, run the checks, open a private page
+```
+
+`just status` and `just dashboard` read `PLOTPOINTS_API_URL` and `PLOTPOINTS_SITE_URL` from `.env`;
+`--gcloud` needs the `gcloud` CLI and `GCP_REGION`. The dashboard is one static HTML file at
+`data/reports/dashboard.html`: requests, server errors, speed, imports, kept ratings, group and
+browse use, a chart and a table for each day, and the live check results. It never leaves your
+machine, so there is nothing to log in to or to protect. It cannot show unique or returning people
+(the log has nothing that could tell them apart); Cloudflare covers visits.
+
+**A weekly routine** (ten minutes): `just status`; `just dashboard --gcloud --status --open`;
+`just user-ingest`; glance at the Billing page. Monthly: refresh the snapshot and redeploy.
+
+## 10. The commands, once the accounts exist
+
+```powershell
+winget install Google.CloudSDK            # one time; then: gcloud auth login
+# put GCP_PROJECT, GCP_REGION, PLOTPOINTS_CORS_ORIGINS in .env (see .env.example)
+just deploy-api -DryRun                   # every command, none of them run
+just deploy-api                           # build, push, deploy; prints the API address
+# put that address in .env as PLOTPOINTS_API_URL, and the site's as PLOTPOINTS_SITE_URL
+just deploy-web -DryRun                   # then without -DryRun
+just status
+```
+
+`scripts/deploy_api.ps1` and `scripts/deploy_web.ps1` wrap the commands in sections 3 and 4 with the
+same settings. They have only been run in `-DryRun` mode (no cloud account yet), so read the dry run
+before the first real one.

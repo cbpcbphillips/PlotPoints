@@ -43,7 +43,7 @@ snapshot *args:
 
 # Run the API locally against the newest snapshot, with reload. http://localhost:8000/docs
 api:
-    uv run --group api uvicorn api.app:create_app --factory --reload --port 8000
+    $env:PLOTPOINTS_CACHE_SECONDS = '0'; $env:PLOTPOINTS_DOCS = '1'; uv run --group api uvicorn api.app:create_app --factory --reload --port 8000
 
 # Regenerate api/requirements.txt (the API image's pins) from uv.lock
 api-reqs:
@@ -121,6 +121,26 @@ test-inbox *args:
 # Daily usage numbers from the API log: gcloud run services logs read ... | just usage
 usage *args:
     uv run src/usage_report.py {{args}}
+
+# Is the live site healthy? Needs PLOTPOINTS_API_URL and PLOTPOINTS_SITE_URL in .env (or --api/--site)
+status *args:
+    uv run src/status_check.py {{args}}
+
+# A private dashboard page from the API log -> data/reports/dashboard.html (see src/dashboard.py)
+dashboard *args:
+    uv run src/dashboard.py {{args}}
+
+# Put the API's three secrets into Google Secret Manager from .env (-DryRun shows names only)
+gcp-secrets *args:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create_secrets.ps1 {{args}}
+
+# Deploy the API to Cloud Run (add -DryRun to preview every command): see docs/deploy.md
+deploy-api *args:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy_api.ps1 {{args}}
+
+# Build the site against the live API and publish it to Cloudflare Pages (-DryRun to preview)
+deploy-web *args:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy_web.ps1 {{args}}
 
 # --- dbt (transformed schema) ---
 

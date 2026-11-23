@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Backdrop } from '../components/Backdrop'
 import { FilmCard } from '../components/FilmCard'
@@ -11,13 +12,20 @@ import { api } from '../lib/api'
 import { browsePath } from '../lib/browse'
 import { prettyDate, tmdbWatchUrl } from '../lib/format'
 import { effectiveFilms, useProfile, type Profile } from '../lib/profile'
+import { keyString, loadList, saveList } from '../lib/savedLists'
 import type { Enjoyed, Facet, Result } from '../lib/types'
 
 const FIRST_PAGE = 20 // the top pick, the reel, and the sample the "because you enjoyed" row uses
 const PAGE = 10
 const BRANCH_OUT = 12 // films in the varied second row
 
-/** Recommendations for the current profile, paged. */
+/**
+ * Recommendations for the current profile, paged.
+ *
+ * The plain main list (no service filter, no browse filter, the standard first page) is also kept in
+ * this browser: a returning visitor sees it straight away while a fresh one loads, which hides a
+ * sleeping server. `showingSaved` is true until the fresh answer arrives.
+ */
 export function useRecommendations(
   profile: Profile,
   providers: string[] = [],
@@ -25,18 +33,33 @@ export function useRecommendations(
   firstPage = FIRST_PAGE,
   facets?: Facet[],
 ) {
-  return useInfiniteQuery({
-    queryKey: [
-      'recommend',
-      profile.importedAt,
-      profile.matched,
-      profile.notForMe.join(','),
-      providers.join('|'),
-      firstPage,
-      facets?.map((f) => `${f.kind}:${f.mode}:${f.values.join('|')}`).join(',') ?? '',
-    ],
+  const queryKey = [
+    'recommend',
+    profile.importedAt,
+    profile.matched,
+    profile.notForMe.join(','),
+    providers.join('|'),
+    firstPage,
+    facets?.map((f) => `${f.kind}:${f.mode}:${f.values.join('|')}`).join(',') ?? '',
+  ]
+  const key = keyString(queryKey)
+  const mainList = providers.length === 0 && !facets?.length && firstPage === FIRST_PAGE
+  const saved = useMemo(
+    () => (mainList && enabled ? loadList(key) : null),
+    [key, mainList, enabled],
+  )
+
+  const q = useInfiniteQuery({
+    queryKey,
     initialPageParam: 0,
     enabled,
+    // a saved list is shown at once but counts as old, so the page asks for a fresh one anyway
+    ...(saved
+      ? {
+          initialData: { pages: [saved.page], pageParams: [0] },
+          initialDataUpdatedAt: saved.savedAt,
+        }
+      : {}),
     queryFn: ({ pageParam }) =>
       api.recommend({
         members: [{ name: profile.name, films: effectiveFilms(profile) }],
@@ -49,6 +72,16 @@ export function useRecommendations(
       }),
     getNextPageParam: (last, pages) =>
       last.has_more ? pages.reduce((n, p) => n + p.results.length, 0) : undefined,
+  })
+
+  const first = q.data?.pages[0]
+  useEffect(() => {
+    if (mainList && q.isFetchedAfterMount && q.isSuccess && first) saveList(key, first)
+  }, [key, mainList, q.isFetchedAfterMount, q.isSuccess, first])
+
+  // only while a fresh list is actually on its way (a list saved a minute ago needs none)
+  return Object.assign(q, {
+    showingSaved: saved !== null && q.isFetching && !q.isFetchedAfterMount,
   })
 }
 
@@ -280,6 +313,11 @@ function ForYouFor({ profile, onNope }: { profile: Profile; onNope: (id: number)
               asOf={meta.data ? prettyDate(meta.data.providers_as_of) : undefined}
               onNope={() => onNope(top.tmdb_id)}
             />
+            {q.showingSaved && (
+              <p role="status" className="m-0 mt-3 text-sm text-muted">
+                Showing your last list while we get a fresh one.
+              </p>
+            )}
             <ThinTaste liked={q.data?.pages[0].liked_films ?? 0} source={profile.source} />
             <Ad kind="leaderboard" />
             <div className="two" style={wildcard ? undefined : { gridTemplateColumns: '1fr' }}>
